@@ -1,0 +1,104 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-suno-bg text-suno-text-light font-sans antialiased;
+  }
+
+  ::selection {
+    @apply bg-suno-yellow text-suno-bg;
+  }
+
+  /* 滚动条 */
+  ::-webkit-scrollbar {
+    @apply w-2 h-2;
+  }
+  ::-webkit-scrollbar-track {
+    @apply bg-suno-gray-900;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-suno-gray-600 rounded-full;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-neutral-500;
+  }
+}
+
+@layer components {
+  .card {
+    @apply bg-suno-gray-800 border border-suno-gray-700 rounded-xl p-5;
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg font-semibold
+           px-4 py-2.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-primary {
+    @apply btn bg-suno-yellow text-suno-bg hover:bg-yellow-300
+           hover:shadow-[0_0_20px_rgba(255,237,41,0.35)];
+  }
+
+  .btn-ghost {
+    @apply btn border border-suno-gray-600 text-suno-text-light
+           hover:border-suno-yellow hover:text-suno-yellow;
+  }
+
+  .input {
+    @apply w-full bg-suno-gray-900 border border-suno-gray-600 rounded-lg
+           px-3 py-2 text-sm text-suno-text-light placeholder-neutral-500
+           focus:outline-none focus:border-suno-yellow
+           focus:ring-1 focus:ring-suno-yellow/40 transition-colors;
+  }
+
+  .heading-lg {
+    @apply text-3xl sm:text-4xl font-extrabold text-white tracking-tight;
+  }
+
+  .heading-md {
+    @apply text-xl font-bold text-white;
+  }
+
+  .tag {
+    @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium border;
+  }
+
+  .code {
+    @apply font-mono text-[13px] bg-suno-gray-900 border border-suno-gray-700
+           rounded-lg p-4 overflow-x-auto text-neutral-200;
+  }
+
+  /* 文档正文（v-html 渲染的说明块） */
+  .doc-body :deep(table),
+  .doc-body table {
+    @apply w-full border-collapse text-xs my-3;
+  }
+  .doc-body th,
+  .doc-body td {
+    @apply border border-suno-gray-600 px-2.5 py-1.5 text-left align-top;
+  }
+  .doc-body th {
+    @apply bg-suno-gray-900 text-neutral-200 font-semibold whitespace-nowrap;
+  }
+  .doc-body td {
+    @apply text-neutral-300;
+  }
+  .doc-body code {
+    @apply font-mono text-[11px] bg-suno-gray-700 text-suno-yellow rounded px-1 py-0.5;
+  }
+  .doc-body p {
+    @apply my-2 text-sm leading-6 text-neutral-300;
+  }
+  .doc-body ul {
+    @apply list-disc pl-5 my-2 space-y-1 text-sm text-neutral-300;
+  }
+  .doc-body strong {
+    @apply text-white font-semibold;
+  }
+}

@@ -1,0 +1,19 @@
+[Unit]
+Description=Suno Open Platform site (Nuxt)
+After=network.target suno.service
+
+[Service]
+User=__RUN_USER__
+WorkingDirectory=__INSTALL_DIR__/open
+Environment=HOST=127.0.0.1
+Environment=PORT=3000
+# 在线测试时 Nuxt 服务端转发到的后端地址
+Environment=NUXT_UPSTREAM_BASE=http://127.0.0.1:8080
+# 文档代码示例里展示给接入方的接口地址
+Environment=NUXT_PUBLIC_API_BASE=https://__API_DOMAIN__
+ExecStart=/usr/bin/node .output/server/index.mjs
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
