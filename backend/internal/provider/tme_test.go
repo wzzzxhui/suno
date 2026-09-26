@@ -140,3 +140,23 @@ func TestRouterDispatch(t *testing.T) {
 		t.Error("未登记的类型应走默认上游")
 	}
 }
+
+// 进行中的训练任务：按真实返回的结构取出阶段、开始时间与轮次。
+func TestTMEJobProgress(t *testing.T) {
+	raw := `{"id":"6bd6","state":2,"outputs":[{"errorCode":0,"smartContentDescriptor":{"singingCloning":
+		{"modelName":"m1_x","totalEpoch":50,"type":2}}}],"timing":{"completedAt":"0","createdAt":"1790358179000","startedAt":"1790358179000"}}`
+	var job tmeJob
+	if err := json.Unmarshal([]byte(raw), &job); err != nil {
+		t.Fatal(err)
+	}
+	p := job.progress()
+	if p.Stage != "running" || p.TotalEpoch != 50 || p.StartedAt == nil || p.StartedAt.UnixMilli() != 1790358179000 {
+		t.Errorf("进度解析不对：%+v", p)
+	}
+
+	queued := tmeJob{State: 1}
+	queued.Timing.StartedAt = "0"
+	if p := queued.progress(); p.Stage != "queued" || p.StartedAt != nil {
+		t.Errorf("排队中不应有开始时间：%+v", p)
+	}
+}

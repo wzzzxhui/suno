@@ -91,6 +91,31 @@ func (m *MP3Maker) Get(ctx context.Context, t *model.Task) ([]byte, error) {
 	return data, nil
 }
 
+// URL 返回作品 MP3 在 COS 上的签名地址，供唱歌克隆等外部服务下载。
+//
+// Suno 的「m4a」里装的是 Opus 编码，腾讯唱歌克隆解不了（报 10004 Engine Error），
+// 所以交给外部服务前统一转成 MP3。已转存的作品复用 archived.mp3 副本，未转存的也写到同一路径。
+func (m *MP3Maker) URL(ctx context.Context, t *model.Task, expire time.Duration) (string, error) {
+	if m.archiver == nil {
+		return "", errors.New("未配置 COS，无法提供 MP3 地址")
+	}
+	if a := m.archived(ctx, t); a != nil && a.MP3 != "" {
+		return m.archiver.Sign(a.MP3, expire), nil
+	}
+	data, err := m.Get(ctx, t)
+	if err != nil {
+		return "", err
+	}
+	if a := m.archived(ctx, t); a != nil && a.MP3 != "" {
+		return m.archiver.Sign(a.MP3, expire), nil
+	}
+	key := fmt.Sprintf("songs/m%d/%d.mp3", t.MerchantID, t.ID)
+	if err := m.archiver.signer.Put(ctx, m.archiver.client, m.archiver.base+"/"+key, "audio/mpeg", data); err != nil {
+		return "", fmt.Errorf("上传 MP3 失败: %w", err)
+	}
+	return m.archiver.Sign(key, expire), nil
+}
+
 // archived 读取最新的转存信息；未配置 COS 或作品未转存时返回 nil。
 func (m *MP3Maker) archived(ctx context.Context, t *model.Task) *model.ArchivedFiles {
 	if m.archiver == nil {
@@ -127,6 +152,14 @@ func (m *MP3Maker) download(ctx context.Context, src string) ([]byte, error) {
 		return nil, fmt.Errorf("文件为空或超过 100MB")
 	}
 	return data, nil
+}
+
+// Transcode 把任意音频转成 MP3，供上传演唱音色等场景使用（浏览器录音是 WAV）。
+func (m *MP3Maker) Transcode(ctx context.Context, data []byte) ([]byte, error) {
+	if isMP3(data) {
+		return data, nil
+	}
+	return m.transcode(ctx, data)
 }
 
 // transcode 用 ffmpeg 把音频转成 192kbps MP3。M4A 的索引常在文件末尾，不能走管道输入，先落临时文件。

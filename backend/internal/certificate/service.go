@@ -267,6 +267,9 @@ func fillSongInfo(c *model.Certificate, t *model.Task, request string) {
 		Tags             string `json:"tags"`
 		MV               string `json:"mv"`
 		MakeInstrumental bool   `json:"make_instrumental"`
+		// 音色演唱创作（Mureka）：歌词在 lyrics，prompt 是风格
+		Lyrics string `json:"lyrics"`
+		Model  string `json:"model"`
 	}
 	_ = json.Unmarshal([]byte(request), &req)
 	if strings.TrimSpace(c.Title) == "" {
@@ -274,6 +277,15 @@ func fillSongInfo(c *model.Certificate, t *model.Task, request string) {
 	}
 	if strings.TrimSpace(c.Title) == "" {
 		c.Title = "未命名作品"
+	}
+	if req.Lyrics != "" {
+		c.Lyrics = req.Lyrics
+		if c.Tags == "" {
+			c.Tags = req.Prompt
+		}
+		if c.ModelName == "" {
+			c.ModelName = "Mureka " + req.Model
+		}
 	}
 	if c.Lyrics == "" && !req.MakeInstrumental {
 		c.Lyrics = req.Prompt

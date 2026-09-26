@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -63,6 +64,7 @@ const (
 
 // 任务状态：1=SUBMITTED 2=PROCESSING 3=COMPLETED 4=ERROR 5=CANCELED
 const (
+	tmeStateRunning   = 2
 	tmeStateCompleted = 3
 	tmeStateError     = 4
 	tmeStateCanceled  = 5
@@ -73,13 +75,24 @@ type tmeJob struct {
 	State    int         `json:"state"`
 	CustomID string      `json:"customId"`
 	Outputs  []tmeOutput `json:"outputs"`
+	// 毫秒时间戳的字符串，未开始时为 "0"
+	Timing struct {
+		StartedAt string `json:"startedAt"`
+	} `json:"timing"`
 	// 文档未给出错误结构，失败时尽量把可能的字段透出来
 	Message string `json:"message"`
 	Error   string `json:"error"`
 }
 
 type tmeOutput struct {
-	Destination        string `json:"destination"`
+	Destination            string `json:"destination"`
+	ErrorCode              int    `json:"errorCode"`
+	ErrorMessage           string `json:"errorMessage"`
+	SmartContentDescriptor struct {
+		SingingCloning struct {
+			TotalEpoch int `json:"totalEpoch"`
+		} `json:"singingCloning"`
+	} `json:"smartContentDescriptor"`
 	SmartContentResult struct {
 		SingingCloning struct {
 			SongName  string `json:"songName"`
@@ -175,11 +188,16 @@ func (t *TME) Fetch(ctx context.Context, req *FetchRequest) (*FetchResult, error
 	case tmeStateError, tmeStateCanceled:
 		result.Status = model.StatusFailed
 		result.Reason = firstNonEmpty(job.Message, job.Error, "唱歌克隆任务失败")
+		if len(job.Outputs) > 0 && job.Outputs[0].ErrorCode != 0 {
+			result.Reason = fmt.Sprintf("唱歌克隆任务失败（错误码 %d：%s）",
+				job.Outputs[0].ErrorCode, firstNonEmpty(job.Outputs[0].ErrorMessage, "未知错误"))
+		}
 		if job.State == tmeStateCanceled {
 			result.Reason = "唱歌克隆任务已取消"
 		}
 		return result, nil
 	default:
+		result.Progress = job.progress()
 		return result, nil
 	}
 
@@ -196,6 +214,23 @@ func (t *TME) Fetch(ctx context.Context, req *FetchRequest) (*FetchResult, error
 		result.FileInfo = &model.FileInfo{MP3URL: url}
 	}
 	return result, nil
+}
+
+// progress 进行中任务的阶段与开始时间。唱歌克隆的 state：1 排队，2 执行中。
+func (j *tmeJob) progress() *model.TaskProgress {
+	p := &model.TaskProgress{Stage: "queued"}
+	if j.State == tmeStateRunning {
+		p.Stage = "running"
+	}
+	if ms, err := strconv.ParseInt(j.Timing.StartedAt, 10, 64); err == nil && ms > 0 {
+		t := time.UnixMilli(ms)
+		p.StartedAt = &t
+		p.Stage = "running"
+	}
+	if len(j.Outputs) > 0 {
+		p.TotalEpoch = j.Outputs[0].SmartContentDescriptor.SingingCloning.TotalEpoch
+	}
+	return p
 }
 
 // outputURL 把仓库内的目录与文件名拼成可访问地址。

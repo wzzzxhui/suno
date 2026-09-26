@@ -839,10 +839,31 @@ func (s *Store) DeleteSong(ctx context.Context, taskID int64) (int64, error) {
 
 /* ---------------------------------- 音色库 ---------------------------------- */
 
+// VoiceTrainPace 按最近完成的音色训练算平均每轮耗时（秒），samples 为参与计算的训练数。
+// 耗时按提交到完成计，包含排队；未填轮次的按默认 30 轮。
+func (s *Store) VoiceTrainPace(ctx context.Context) (secondsPerEpoch float64, samples int, err error) {
+	var avg sql.NullFloat64
+	err = s.db.QueryRowContext(ctx, `
+		SELECT AVG(secs / epoch), COUNT(*) FROM (
+			SELECT TIMESTAMPDIFF(SECOND, created_at, finished_at) AS secs,
+			       COALESCE(NULLIF(CAST(JSON_EXTRACT(request_payload, '$.total_epoch') AS UNSIGNED), 0), 30) AS epoch
+			FROM tasks
+			WHERE kind = ? AND status = 'completed' AND finished_at IS NOT NULL
+			ORDER BY id DESC LIMIT 20
+		) recent WHERE secs > 0`, string(model.KindVoiceTrain)).Scan(&avg, &samples)
+	return avg.Float64, samples, err
+}
+
 // ListVoices 列出音色库，merchantID 为 0 时返回全部商户。
 // 音色即「训练音色」任务，名称与模型名取自提交时的请求参数。
 func (s *Store) ListVoices(ctx context.Context, merchantID int64) ([]model.Voice, error) {
-	where, args := "t.kind = ?", []interface{}{string(model.KindVoiceTrain)}
+	return s.ListVoicesOf(ctx, model.KindVoiceTrain, merchantID)
+}
+
+// ListVoicesOf 按类型列出音色：voice_train 为翻唱用的唱歌克隆音色，voice_clone 为直接演唱用的演唱音色。
+// 演唱音色的「模型名」是 Mureka 的 vocal_id。
+func (s *Store) ListVoicesOf(ctx context.Context, kind model.TaskKind, merchantID int64) ([]model.Voice, error) {
+	where, args := "t.kind = ?", []interface{}{string(kind)}
 	if merchantID > 0 {
 		where += " AND t.merchant_id = ?"
 		args = append(args, merchantID)
@@ -851,7 +872,10 @@ func (s *Store) ListVoices(ctx context.Context, merchantID int64) ([]model.Voice
 	rows, err := s.db.QueryContext(ctx, fmt.Sprintf(`
 		SELECT t.id, t.merchant_id, m.name, t.status, t.error_message, t.created_at, t.finished_at,
 		       JSON_UNQUOTE(JSON_EXTRACT(t.request_payload, '$.name')),
-		       JSON_UNQUOTE(JSON_EXTRACT(t.request_payload, '$.model_name'))
+		       JSON_UNQUOTE(COALESCE(JSON_EXTRACT(t.request_payload, '$.model_name'), JSON_EXTRACT(t.request_payload, '$.vocal_id'))),
+		       JSON_EXTRACT(t.request_payload, '$.total_epoch'),
+		       t.updated_at,
+		       IF(t.status IN ('pending','processing'), t.extend, NULL)
 		FROM tasks t
 		JOIN merchants m ON m.id = t.merchant_id
 		WHERE %s
@@ -867,10 +891,24 @@ func (s *Store) ListVoices(ctx context.Context, merchantID int64) ([]model.Voice
 		var v model.Voice
 		var status string
 		var finished sql.NullTime
-		var name, modelName sql.NullString
+		var name, modelName, progress sql.NullString
+		var epoch sql.NullInt64
 		if err := rows.Scan(&v.TaskID, &v.MerchantID, &v.MerchantName, &status, &v.ErrorMessage,
-			&v.CreatedAt, &finished, &name, &modelName); err != nil {
+			&v.CreatedAt, &finished, &name, &modelName, &epoch, &v.CheckedAt, &progress); err != nil {
 			return nil, err
+		}
+		if progress.Valid {
+			var p model.TaskProgress
+			if json.Unmarshal([]byte(progress.String), &p) == nil && p.Stage != "" {
+				v.Progress = &p
+			}
+		}
+		// 上游还没回传轮次时，用提交时的参数（未填为默认 30 轮）
+		if v.Progress != nil && v.Progress.TotalEpoch == 0 {
+			v.Progress.TotalEpoch = 30
+			if epoch.Valid && epoch.Int64 > 0 {
+				v.Progress.TotalEpoch = int(epoch.Int64)
+			}
 		}
 		v.Status = model.TaskStatus(status)
 		v.Name, v.ModelName = name.String, modelName.String
@@ -884,8 +922,13 @@ func (s *Store) ListVoices(ctx context.Context, merchantID int64) ([]model.Voice
 
 // DeleteVoice 从音色库移除一个音色。唱歌克隆没有删除模型的接口，腾讯侧的模型仍会保留。
 func (s *Store) DeleteVoice(ctx context.Context, taskID int64) error {
+	return s.DeleteVoiceOf(ctx, model.KindVoiceTrain, taskID)
+}
+
+// DeleteVoiceOf 删除指定类型的音色。
+func (s *Store) DeleteVoiceOf(ctx context.Context, kind model.TaskKind, taskID int64) error {
 	res, err := s.db.ExecContext(ctx, `DELETE FROM tasks WHERE id = ? AND kind = ?`,
-		taskID, string(model.KindVoiceTrain))
+		taskID, string(kind))
 	if err != nil {
 		return err
 	}
@@ -904,23 +947,6 @@ func (s *Store) AudioInUse(ctx context.Context, audioURL string, exceptTaskID in
 		  AND JSON_UNQUOTE(JSON_EXTRACT(request_payload, '$.audio_url')) = ?`,
 		exceptTaskID, audioURL).Scan(&n)
 	return n > 0, err
-}
-
-// VoiceCoverOf 取出为某首歌自动发起的最近一次音色翻唱任务，没有时返回 ErrNotFound。
-func (s *Store) VoiceCoverOf(ctx context.Context, songTaskID int64) (*model.TaskRow, error) {
-	var id int64
-	err := s.db.QueryRowContext(ctx, `
-		SELECT id FROM tasks
-		WHERE kind = ? AND JSON_EXTRACT(request_payload, '$.song_task_id') = ?
-		ORDER BY id DESC LIMIT 1`, string(model.KindVoiceCover), songTaskID).Scan(&id)
-	if err == sql.ErrNoRows {
-		return nil, ErrNotFound
-	}
-	if err != nil {
-		return nil, err
-	}
-	row, _, err := s.AdminTaskByID(ctx, id)
-	return row, err
 }
 
 // CreateFailedTask 记下一条没能提交出去的任务（不扣费），让界面能看到失败原因。

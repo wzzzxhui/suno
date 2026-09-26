@@ -33,6 +33,8 @@ type FetchResult struct {
 	// Extend 是上游完整数据的 JSON 字符串，原样透传给调用方。
 	Extend string
 	Reason string
+	// Progress 任务仍在进行时的进度（如训练已开始时间、总轮次），写入任务供界面展示；为 nil 表示上游没给
+	Progress *model.TaskProgress
 }
 
 // Provider 是所有上游实现需要满足的接口。
@@ -45,7 +47,7 @@ type Provider interface {
 // OutputCount 返回某类任务会产出几个结果，用于建多少条任务记录。
 func OutputCount(kind model.TaskKind) int {
 	switch kind {
-	case model.KindGenerate, model.KindUpsample:
+	case model.KindGenerate, model.KindUpsample, model.KindVoiceSong:
 		return 2
 	default:
 		return 1

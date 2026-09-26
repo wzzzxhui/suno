@@ -22,6 +22,10 @@ const (
 	// 音色类任务走腾讯多媒体实验室「唱歌克隆」，不经过 Suno 上游
 	KindVoiceTrain TaskKind = "voice_train" // 训练音色模型
 	KindVoiceCover TaskKind = "voice_cover" // 用音色模型翻唱
+
+	// 演唱音色走 Mureka：上传清唱得到演唱音色，创作时直接用它演唱，不经过先生成再翻唱
+	KindVoiceClone TaskKind = "voice_clone" // 创建演唱音色（同步完成）
+	KindVoiceSong  TaskKind = "voice_song"  // 用演唱音色创作歌曲
 )
 
 // TaskStatus 任务状态。
@@ -129,6 +133,14 @@ type Task struct {
 	FinishedAt     *time.Time `json:"finished_at,omitempty"`
 }
 
+// TaskProgress 长任务（如音色训练）进行中时从上游取到的进度，存在任务的 extend 里。
+// 上游不给百分比，只能展示所处阶段与已进行时长。
+type TaskProgress struct {
+	Stage      string     `json:"stage"`                 // queued=排队中 running=进行中
+	StartedAt  *time.Time `json:"started_at,omitempty"`  // 上游开始执行的时间，排队时为空
+	TotalEpoch int        `json:"total_epoch,omitempty"` // 音色训练的总轮次
+}
+
 // PointLog 积分流水。
 type PointLog struct {
 	ID         int64     `json:"id"`
@@ -158,6 +170,9 @@ var Price = map[TaskKind]int64{
 	// 腾讯侧按量计费，上线前按实际成本核定
 	KindVoiceTrain: 100,
 	KindVoiceCover: 20,
+	// Mureka 按首计费，启动时可用 MUREKA_* 配置覆盖
+	KindVoiceClone: 20,
+	KindVoiceSong:  36,
 }
 
 // CopyrightAudioSurcharge 使用受版权保护音频时的额外扣费。

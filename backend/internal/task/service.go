@@ -7,11 +7,13 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/lepro/suno-open-api/internal/config"
 	"github.com/lepro/suno-open-api/internal/httpx"
+	"github.com/lepro/suno-open-api/internal/media"
 	"github.com/lepro/suno-open-api/internal/model"
 	"github.com/lepro/suno-open-api/internal/provider"
 	"github.com/lepro/suno-open-api/internal/storage"
@@ -24,6 +26,28 @@ type Service struct {
 	cfg      *config.Config
 	cleaner  *SampleCleaner
 	archive  func(ctx context.Context, taskID int64)
+	// coverSource 给音色翻唱准备原曲地址（转成 MP3 放到 COS）；为 nil 时直接用作品原始音频
+	coverSource func(ctx context.Context, t *model.Task) (string, error)
+}
+
+// SetCoverSource 设置音色翻唱的原曲地址生成方式。
+func (s *Service) SetCoverSource(fn func(ctx context.Context, t *model.Task) (string, error)) {
+	s.coverSource = fn
+}
+
+// CoverAudio 为音色翻唱取原曲地址：优先转成 MP3 的 COS 地址，取不到时退回作品当前可播放的音频。
+func (s *Service) CoverAudio(ctx context.Context, t *model.Task) string {
+	// 首次转 MP3 要下载、转码、上传，可能要二三十秒；不跟随请求取消，避免浏览器超时后白做
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Minute)
+	defer cancel()
+	if s.coverSource != nil {
+		if u, err := s.coverSource(ctx, t); err == nil && u != "" {
+			return u
+		} else if err != nil {
+			log.Printf("[voice] 原曲转 MP3 失败 task=%d，改用原始音频: %v", t.ID, err)
+		}
+	}
+	return media.PlayableAudio(ctx, t)
 }
 
 // SetArchiver 设置任务完成后的转存动作，为 nil 时不转存。
@@ -114,14 +138,35 @@ func (s *Service) Retry(ctx context.Context, merchantID, taskID int64) (*model.T
 	if err := json.Unmarshal([]byte(raw), &payload); err != nil || payload == nil {
 		return nil, httpx.BadRequest("任务缺少原始参数，无法重试")
 	}
+	// 翻唱作品库里的歌：原曲地址会过期，且旧任务可能用的是 Opus 原文件，重试时重新生成
+	if t.Kind == model.KindVoiceCover {
+		if songID, ok := payload["song_task_id"].(float64); ok && songID > 0 {
+			if song, _, err := s.store.AdminTaskByID(ctx, int64(songID)); err == nil {
+				if u := s.CoverAudio(ctx, &song.Task); u != "" {
+					payload["audio_url"] = u
+					raw, _ := json.Marshal(payload)
+					_ = s.store.SetRequestPayload(ctx, taskID, string(raw))
+				}
+			}
+		}
+	}
 
 	result, err := s.provider.Submit(ctx, &provider.SubmitRequest{Kind: t.Kind, Payload: payload})
 	if err != nil {
 		log.Printf("[task] 重试提交上游失败 task=%d: %v", taskID, err)
 		return nil, httpx.Internal("重试提交上游失败：" + err.Error())
 	}
-	// 生成音乐一次产出两个版本，重试只补这一条，取第一个结果
-	if err := s.store.RetryTask(ctx, taskID, result.ProviderIDs[0], max); err != nil {
+	// 生成音乐一次产出两个版本，重试只补这一条：Mureka 的结果按「任务号#序号」区分，保持原序号；其余取第一个
+	providerID := result.ProviderIDs[0]
+	if i := strings.LastIndexByte(t.ProviderTaskID, '#'); i > 0 {
+		suffix := t.ProviderTaskID[i:]
+		for _, id := range result.ProviderIDs {
+			if strings.HasSuffix(id, suffix) {
+				providerID = id
+			}
+		}
+	}
+	if err := s.store.RetryTask(ctx, taskID, providerID, max); err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
 			return nil, httpx.BadRequest("任务状态已变化，请刷新后再试")
 		}
@@ -193,7 +238,7 @@ func remarkOf(kind model.TaskKind) string {
 	case model.KindVoiceCover:
 		return "音色翻唱"
 	default:
-		return string(kind)
+		return model.LabelOf(kind)
 	}
 }
 
@@ -311,9 +356,6 @@ func (w *Worker) sync(ctx context.Context, t *model.Task) {
 		if w.svc.archive != nil {
 			w.svc.archive(ctx, t.ID)
 		}
-		if t.Kind == model.KindGenerate {
-			go w.svc.chainVoiceCover(ctx, t.ID)
-		}
 	case model.StatusFailed:
 		reason := res.Reason
 		if reason == "" {
@@ -324,7 +366,11 @@ func (w *Worker) sync(ctx context.Context, t *model.Task) {
 		if t.Status == model.StatusPending {
 			_ = w.svc.store.MarkProcessing(ctx, t.ID)
 		}
-		_ = w.svc.store.Touch(ctx, t.ID)
+		if res.Progress != nil {
+			_ = w.svc.store.SetProgress(ctx, t.ID, res.Progress)
+		} else {
+			_ = w.svc.store.Touch(ctx, t.ID)
+		}
 	}
 }
 

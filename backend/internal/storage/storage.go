@@ -455,6 +455,24 @@ func (s *Store) MarkProcessing(ctx context.Context, taskID int64) error {
 	return err
 }
 
+// SetProgress 记录进行中任务的上游进度，同时刷新 updated_at（即最近一次向上游确认状态的时间）。
+func (s *Store) SetProgress(ctx context.Context, taskID int64, p *model.TaskProgress) error {
+	raw, err := json.Marshal(p)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx,
+		`UPDATE tasks SET extend = ?, updated_at = NOW() WHERE id = ? AND status IN ('pending','processing')`,
+		string(raw), taskID)
+	return err
+}
+
+// SetRequestPayload 更新任务的请求参数（如重试前换了新的原曲地址）。
+func (s *Store) SetRequestPayload(ctx context.Context, taskID int64, payload string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE tasks SET request_payload = ? WHERE id = ?`, payload, taskID)
+	return err
+}
+
 // Touch 更新 updated_at，避免 worker 反复抢同一批任务。
 func (s *Store) Touch(ctx context.Context, taskID int64) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE tasks SET updated_at = NOW() WHERE id = ?`, taskID)

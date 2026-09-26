@@ -2,7 +2,6 @@ package adminapi
 
 import (
 	"errors"
-	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -15,6 +14,7 @@ import (
 	"github.com/lepro/suno-open-api/internal/model"
 	"github.com/lepro/suno-open-api/internal/musicreq"
 	"github.com/lepro/suno-open-api/internal/mv"
+	"github.com/lepro/suno-open-api/internal/provider"
 	"github.com/lepro/suno-open-api/internal/storage"
 	"github.com/lepro/suno-open-api/internal/task"
 	"github.com/lepro/suno-open-api/internal/upstream"
@@ -30,6 +30,7 @@ type Server struct {
 	archive *archive.Archiver
 	certs   *certificate.Service
 	mp3     *archive.MP3Maker
+	vocal   provider.VocalService
 	secret  string
 	ttl     time.Duration
 }
@@ -81,6 +82,7 @@ func (s *Server) Register(r *httpx.Router) {
 	r.POST("/admin/api/songs/delete", s.deleteSong, auth)
 	r.GET("/admin/api/songs/mp3", s.songMP3, auth)
 	s.registerCertificates(r, auth)
+	s.registerVocals(r, auth)
 
 	r.GET("/admin/api/voices", s.voices, auth)
 	r.POST("/admin/api/voices/train", s.trainVoice, auth)
@@ -520,12 +522,9 @@ func (s *Server) deleteKey(w http.ResponseWriter, r *http.Request) error {
 type adminGenerateRequest struct {
 	musicreq.Generate
 	MerchantID int64 `json:"merchant_id"`
-	// VoiceID 选了音色时，歌曲生成完成后自动用该音色翻唱：0 为官方默认音色，大于 0 为音色库里的音色，不传则不翻唱
-	VoiceID *int64 `json:"voice_id"`
+	// VoiceID 演唱音色（创建演唱音色任务的编号）：选了就改由 Mureka 直接用这个声音演唱，不再用 Suno
+	VoiceID int64 `json:"voice_id"`
 }
-
-// generateVersions 生成音乐一次产出的版本数，自动翻唱按版本数计费
-const generateVersions = 2
 
 // generateMusic 由运营在后台代商户发起生成，积分从该商户账户扣除。
 func (s *Server) generateMusic(w http.ResponseWriter, r *http.Request) error {
@@ -542,6 +541,9 @@ func (s *Server) generateMusic(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	if req.VoiceID > 0 {
+		return s.generateWithVoice(w, r, user, merchant, &req)
+	}
 
 	payload, err := req.Payload()
 	if err != nil {
@@ -550,20 +552,6 @@ func (s *Server) generateMusic(w http.ResponseWriter, r *http.Request) error {
 	// 标记来源，便于在任务列表里区分后台代建与商户自助调用
 	payload["created_by"] = "admin:" + user.Username
 
-	var coverCost int64
-	if req.VoiceID != nil {
-		choice, err := s.voiceChoice(r, *req.VoiceID, merchant.ID, *req.MakeInstrumental)
-		if err != nil {
-			return err
-		}
-		payload[task.VoicePayloadKey] = choice
-		// 翻唱在歌曲生成完成后才扣费，提交前先确认余额够付全程，免得歌做好了却翻唱不了
-		coverCost = model.PriceOf(model.KindVoiceCover) * generateVersions
-		if need := model.PriceOf(model.KindGenerate) + coverCost; merchant.Points < need {
-			return httpx.NoPoints(fmt.Sprintf("积分不足：生成加两个版本的音色翻唱共需 %d 积分，当前余额 %d", need, merchant.Points))
-		}
-	}
-
 	ids, err := s.tasks.Submit(r.Context(), merchant.ID, model.KindGenerate, payload, 0)
 	if err != nil {
 		return err
@@ -571,27 +559,11 @@ func (s *Server) generateMusic(w http.ResponseWriter, r *http.Request) error {
 
 	balance, _ := s.store.Balance(r.Context(), merchant.ID)
 	httpx.JSON(w, map[string]interface{}{
-		"task_ids":   ids,
-		"balance":    balance,
-		"cost":       model.PriceOf(model.KindGenerate),
-		"cover_cost": coverCost,
+		"task_ids": ids,
+		"balance":  balance,
+		"cost":     model.PriceOf(model.KindGenerate),
 	})
 	return nil
-}
-
-// voiceChoice 校验创作时选的音色并取出模型名。
-func (s *Server) voiceChoice(r *http.Request, voiceID, merchantID int64, instrumental bool) (*task.VoiceChoice, error) {
-	if instrumental {
-		return nil, httpx.BadRequest("纯音乐没有人声，不能指定音色")
-	}
-	if voiceID == 0 {
-		return &task.VoiceChoice{ModelName: defaultVoiceModel, Name: defaultVoiceName}, nil
-	}
-	modelName, name, err := s.voiceOf(r, voiceID, merchantID)
-	if err != nil {
-		return nil, err
-	}
-	return &task.VoiceChoice{VoiceID: voiceID, ModelName: modelName, Name: name}, nil
 }
 
 // activeMerchant 取出后台代建任务的归属商户，并确认其处于启用状态。
@@ -909,14 +881,7 @@ func (s *Server) taskDetail(w http.ResponseWriter, r *http.Request) error {
 		}
 		return err
 	}
-	out := map[string]interface{}{"task": task, "request_payload": request}
-	// 创作时选了音色的歌曲，带上自动翻唱的进度
-	if task.Task.Kind == model.KindGenerate {
-		if cover, err := s.store.VoiceCoverOf(r.Context(), id); err == nil {
-			out["voice_cover"] = cover
-		}
-	}
-	httpx.JSON(w, out)
+	httpx.JSON(w, map[string]interface{}{"task": task, "request_payload": request})
 	return nil
 }
 

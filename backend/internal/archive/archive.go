@@ -26,6 +26,7 @@ const maxFileSize = 100 << 20
 var Kinds = []model.TaskKind{
 	model.KindGenerate, model.KindSound, model.KindUpload, model.KindWholeSong, model.KindUpsample,
 	model.KindCrop, model.KindSpeed, model.KindDownloadWAV, model.KindDownloadMP3, model.KindDownloadM4A,
+	model.KindVoiceSong,
 }
 
 var archivable = func() map[model.TaskKind]bool {

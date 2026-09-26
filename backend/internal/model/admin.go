@@ -146,6 +146,8 @@ var KindLabels = map[TaskKind]string{
 	KindDownloadM4A:   "下载 M4A",
 	KindVoiceTrain:    "训练音色",
 	KindVoiceCover:    "音色翻唱",
+	KindVoiceClone:    "创建演唱音色",
+	KindVoiceSong:     "音色演唱创作",
 }
 
 // LabelOf 返回任务类型的中文名，未知类型回退为原始值。
@@ -162,7 +164,7 @@ func AllKinds() []TaskKind {
 		KindGenerate, KindSound, KindUpload, KindWholeSong, KindAlignedLyrics,
 		KindUpsample, KindVideo, KindCrop, KindSpeed,
 		KindDownloadWAV, KindDownloadMP3, KindDownloadM4A,
-		KindVoiceTrain, KindVoiceCover,
+		KindVoiceTrain, KindVoiceCover, KindVoiceClone, KindVoiceSong,
 	}
 }
 
@@ -177,6 +179,10 @@ type Voice struct {
 	ErrorMessage string     `json:"error_message,omitempty"`
 	CreatedAt    time.Time  `json:"created_at"`
 	FinishedAt   *time.Time `json:"finished_at,omitempty"`
+
+	// 训练中才有：上游进度，以及最近一次向上游确认状态的时间（持续刷新说明还在跟进）
+	Progress  *TaskProgress `json:"progress,omitempty"`
+	CheckedAt time.Time     `json:"checked_at"`
 }
 
 // ProxyAlive 判断上游签名代理地址是否仍在有效期内。

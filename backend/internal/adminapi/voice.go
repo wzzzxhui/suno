@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/lepro/suno-open-api/internal/httpx"
-	"github.com/lepro/suno-open-api/internal/media"
 	"github.com/lepro/suno-open-api/internal/model"
 	"github.com/lepro/suno-open-api/internal/provider"
 	"github.com/lepro/suno-open-api/internal/storage"
@@ -37,10 +36,19 @@ func (s *Server) voices(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+
+	// 上游不给进度百分比，界面按「每轮耗时 × 轮次」估算；有完成记录时用实际平均值
+	pace := map[string]interface{}{"seconds_per_epoch": s.cfg.VoiceTrainSecondsPerEpoch, "samples": 0}
+	if avg, n, err := s.store.VoiceTrainPace(r.Context()); err == nil && n > 0 && avg > 0 {
+		pace = map[string]interface{}{"seconds_per_epoch": avg, "samples": n}
+	}
 	httpx.JSON(w, map[string]interface{}{
 		"list":       list,
 		"configured": s.cfg.VoiceConfigured(),
-		"default":    map[string]string{"model_name": defaultVoiceModel, "name": defaultVoiceName},
+		// 训练超过该时长仍未完成会被判失败，界面用来提示预计等待
+		"train_timeout_minutes": int(s.cfg.VoiceTrainTimeout.Minutes()),
+		"train_pace":            pace,
+		"default":               map[string]string{"model_name": defaultVoiceModel, "name": defaultVoiceName},
 		"prices": map[string]int64{
 			"train": model.PriceOf(model.KindVoiceTrain),
 			"cover": model.PriceOf(model.KindVoiceCover),
@@ -217,8 +225,8 @@ func (s *Server) songAudioOf(r *http.Request, taskID, merchantID int64) (string,
 		return "", httpx.BadRequest("作品尚未生成完成")
 	}
 
-	// 上游转存的音频约一天后失效，逐个探测候选地址，取当前能访问的
-	if u := media.PlayableAudio(r.Context(), &t.Task); u != "" {
+	// 转成 MP3 放到 COS（Suno 原文件是 Opus，唱歌克隆解不了）；转不了时退回当前能访问的原始音频
+	if u := s.tasks.CoverAudio(r.Context(), &t.Task); u != "" {
 		return u, nil
 	}
 	return "", httpx.BadRequest("该作品的音频已失效")

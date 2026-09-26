@@ -73,6 +73,8 @@ type Config struct {
 	VoiceOutputBase   string
 	VoiceOutputDir    string
 	VoiceTrainTimeout time.Duration
+	// 估算训练进度用的每轮耗时（秒）；有训练完成的记录后改用实际平均值
+	VoiceTrainSecondsPerEpoch int
 	// 注册时绑定的 COS 存储桶；桶为私有读时用 COS 密钥把结果签成临时下载链接
 	VoiceCOSBucket    string
 	VoiceCOSRegion    string
@@ -103,6 +105,13 @@ type Config struct {
 	MVLLMAPIKey  string
 	MVLLMModel   string
 	FFmpegPath   string
+
+	// Mureka：用上传的清唱直接生成歌曲（演唱音色）。未配置 API Key 时用本地模拟
+	MurekaBase       string
+	MurekaAPIKey     string
+	MurekaModel      string
+	MurekaSongPrice  int64
+	MurekaClonePrice int64
 
 	// 创作证明：每份价格（积分，首次签发收取，重复下载免费）、签发单位、证书字体
 	// CertVerifyURL 为公开站核验页地址，证书二维码指向「该地址?no=证书编号」，留空则不印二维码
@@ -156,10 +165,12 @@ func Load() *Config {
 		VoiceOutputDir:        "/" + strings.Trim(env("TME_OUTPUT_DIR", "/voice_cover"), "/"),
 		// 训练一个音色要几十分钟，不能沿用普通任务的超时
 		VoiceTrainTimeout: envDuration("TME_TRAIN_TIMEOUT", 3*time.Hour),
-		VoiceCOSBucket:    env("TME_COS_BUCKET", ""),
-		VoiceCOSRegion:    env("TME_COS_REGION", ""),
-		VoiceCOSSecretID:  env("TME_COS_SECRET_ID", ""),
-		VoiceCOSSecretKey: env("TME_COS_SECRET_KEY", ""),
+
+		VoiceTrainSecondsPerEpoch: envInt("TME_TRAIN_SECONDS_PER_EPOCH", 20),
+		VoiceCOSBucket:            env("TME_COS_BUCKET", ""),
+		VoiceCOSRegion:            env("TME_COS_REGION", ""),
+		VoiceCOSSecretID:          env("TME_COS_SECRET_ID", ""),
+		VoiceCOSSecretKey:         env("TME_COS_SECRET_KEY", ""),
 		// 链接写进任务记录后不再刷新，有效期需覆盖作品的使用周期
 		VoiceURLExpire:   envDuration("TME_URL_EXPIRE", 30*24*time.Hour),
 		ArchiveURLExpire: envDuration("ARCHIVE_URL_EXPIRE", 7*24*time.Hour),
@@ -184,6 +195,12 @@ func Load() *Config {
 		MVLLMAPIKey:     env("MV_LLM_API_KEY", ""),
 		MVLLMModel:      env("MV_LLM_MODEL", ""),
 		FFmpegPath:      env("FFMPEG_PATH", "ffmpeg"),
+
+		MurekaBase:       strings.TrimRight(env("MUREKA_BASE", "https://api.mureka.cn"), "/"),
+		MurekaAPIKey:     env("MUREKA_API_KEY", ""),
+		MurekaModel:      env("MUREKA_MODEL", "auto"),
+		MurekaSongPrice:  int64(envInt("MUREKA_SONG_PRICE", 36)),
+		MurekaClonePrice: int64(envInt("MUREKA_CLONE_PRICE", 20)),
 
 		CertPrice:     int64(envInt("CERT_PRICE", 100)),
 		CertIssuer:    env("CERT_ISSUER", "SUNO API 开放平台"),
@@ -211,6 +228,9 @@ func Load() *Config {
 	}
 	return cfg
 }
+
+// MurekaConfigured 返回是否配置了 Mureka，未配置时演唱音色走本地模拟。
+func (c *Config) MurekaConfigured() bool { return c.MurekaAPIKey != "" }
 
 // UseMock 返回是否使用本地模拟 Provider。
 func (c *Config) UseMock() bool {

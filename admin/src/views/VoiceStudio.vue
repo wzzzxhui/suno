@@ -32,7 +32,66 @@ const voicesLoading = ref(false)
 const configured = ref(true)
 const prices = reactive({ train: 0, cover: 0 })
 const defaultVoice = ref({ model_name: 'default', name: '官方默认音色' })
+const trainTimeout = ref(180) // 分钟，超过仍未完成会被判失败
+// 每轮训练耗时：有完成记录时为实际平均值（samples > 0），否则为配置的默认值
+const trainPace = ref({ seconds_per_epoch: 20, samples: 0 })
 let voiceTimer = null
+
+// 训练中的音色每秒刷新一次「已训练多久 / 多久前确认」
+const now = ref(Date.now())
+let clockTimer = null
+const trainingVoices = computed(() => voices.value.filter((v) => v.status === 'pending' || v.status === 'processing'))
+
+function minutesText(ms) {
+  const min = Math.floor(ms / 60000)
+  if (min < 1) return '不到 1 分钟'
+  if (min < 60) return `${min} 分钟`
+  return min % 60 ? `${Math.floor(min / 60)} 小时 ${min % 60} 分钟` : `${min / 60} 小时`
+}
+
+// 进度是估算值，悬停说明依据
+const paceHint = computed(() => {
+  const sec = Math.round(trainPace.value.seconds_per_epoch)
+  return trainPace.value.samples > 0
+    ? `预计进度：按最近 ${trainPace.value.samples} 次训练的平均耗时（每轮约 ${sec} 秒）估算，以腾讯云返回完成为准`
+    : `预计进度：暂无训练完成记录，按每轮约 ${sec} 秒估算，完成一次训练后会改用实际耗时`
+})
+
+function agoText(time) {
+  const sec = Math.max(0, Math.round((now.value - new Date(time).getTime()) / 1000))
+  if (sec < 60) return `${sec} 秒前`
+  return `${Math.floor(sec / 60)} 分钟前`
+}
+
+/**
+ * 训练进度：阶段、已训练时长、轮次与估算百分比。
+ * 腾讯不返回进度，按「每轮耗时 × 轮次」估算；完成前最多显示 95%，以腾讯返回完成为准。
+ */
+function trainInfo(v) {
+  const p = v.progress
+  const stage = p?.stage === 'running' ? 'running' : 'queued'
+  const since = p?.started_at ? now.value - new Date(p.started_at).getTime() : 0
+  const epochs = p?.total_epoch || 30
+  const expected = trainPace.value.seconds_per_epoch * epochs * 1000
+  const ratio = stage === 'running' && expected > 0 ? since / expected : 0
+  const percent = Math.min(95, Math.max(stage === 'running' ? 1 : 0, Math.floor(ratio * 100)))
+  let eta = '等待腾讯云开始训练'
+  if (stage === 'running') eta = ratio < 1 ? `预计还需 ${minutesText(expected - since)}` : '比预计慢，仍在训练中'
+  return {
+    stage,
+    percent,
+    eta,
+    overdue: ratio >= 1,
+    label: stage === 'running' ? '训练中' : '排队中',
+    detail:
+      stage === 'running'
+        ? `已训练 ${minutesText(since)}${p?.total_epoch ? ` · 共 ${p.total_epoch} 轮` : ''}`
+        : `已等待 ${minutesText(now.value - new Date(v.created_at).getTime())}`,
+    checked: agoText(v.checked_at),
+    // 后端每几秒查一次上游；两分钟没更新说明后端可能没在运行
+    stale: now.value - new Date(v.checked_at).getTime() > 2 * 60 * 1000
+  }
+}
 
 const readyVoices = computed(() => voices.value.filter((v) => v.status === 'completed'))
 
@@ -45,16 +104,23 @@ async function loadVoices() {
     configured.value = data.configured
     Object.assign(prices, data.prices || {})
     if (data.default) defaultVoice.value = data.default
+    if (data.train_timeout_minutes) trainTimeout.value = data.train_timeout_minutes
+    if (data.train_pace?.seconds_per_epoch) trainPace.value = data.train_pace
+    now.value = Date.now()
   } finally {
     voicesLoading.value = false
   }
 
   // 有音色在训练时定期刷新，训练完就停
-  const training = voices.value.some((v) => v.status === 'pending' || v.status === 'processing')
-  if (training && !voiceTimer) voiceTimer = setInterval(loadVoices, 10000)
+  const training = trainingVoices.value.length > 0
+  if (training && !voiceTimer) {
+    voiceTimer = setInterval(loadVoices, 10000)
+    clockTimer = setInterval(() => (now.value = Date.now()), 1000)
+  }
   if (!training && voiceTimer) {
     clearInterval(voiceTimer)
-    voiceTimer = null
+    clearInterval(clockTimer)
+    voiceTimer = clockTimer = null
   }
 }
 
@@ -228,6 +294,7 @@ watch(merchantId, () => {
 onMounted(loadMerchants)
 
 onBeforeUnmount(() => {
+  if (clockTimer) clearInterval(clockTimer)
   if (timer) clearInterval(timer)
   if (voiceTimer) clearInterval(voiceTimer)
 })
@@ -416,19 +483,47 @@ onBeforeUnmount(() => {
         </div>
       </template>
 
-      <el-table v-loading="voicesLoading" :data="voices" size="small" style="width: 100%">
+      <el-alert v-if="trainingVoices.length" type="info" :closable="false" show-icon class="train-tip">
+        {{ trainingVoices.length }} 个音色正在腾讯云训练，耗时与干声长度和训练轮次有关，50 轮一般十几分钟；
+        超过 {{ minutesText(trainTimeout * 60000) }} 仍未完成会判为失败。本页每 10 秒自动刷新，可以离开稍后再来。
+      </el-alert>
+
+      <el-table v-loading="voicesLoading && !voices.length" :data="voices" size="small" style="width: 100%">
         <el-table-column prop="name" label="音色名称" min-width="120" />
         <el-table-column label="模型名" min-width="150">
           <template #default="{ row }"><span class="mono">{{ row.model_name }}</span></template>
         </el-table-column>
-        <el-table-column label="状态" width="100" align="center">
+        <el-table-column label="状态 / 进度" min-width="360">
           <template #default="{ row }">
             <el-tooltip v-if="row.status === 'failed'" :content="row.error_message || '训练失败'" placement="top">
               <el-tag type="danger" size="small">训练失败</el-tag>
             </el-tooltip>
-            <el-tag v-else :type="TASK_STATUS[row.status]?.type || 'info'" size="small">
-              {{ row.status === 'completed' ? '可用' : '训练中' }}
-            </el-tag>
+            <el-tag v-else-if="row.status === 'completed'" type="success" size="small">可用</el-tag>
+            <div v-else class="train-status">
+              <el-tag :type="trainInfo(row).stage === 'running' ? 'warning' : 'info'" size="small">
+                <span class="pulse"></span>{{ trainInfo(row).label }}
+              </el-tag>
+              <span class="train-detail">{{ trainInfo(row).detail }}</span>
+              <div class="train-progress">
+                <el-progress
+                  :percentage="trainInfo(row).percent"
+                  :stroke-width="8"
+                  :status="trainInfo(row).overdue ? 'warning' : ''"
+                  :striped="trainInfo(row).stage === 'running'"
+                  striped-flow
+                  :duration="12"
+                />
+                <el-tooltip placement="top" :content="paceHint">
+                  <span class="train-eta">{{ trainInfo(row).eta }}</span>
+                </el-tooltip>
+              </div>
+              <div class="train-checked" :class="{ stale: trainInfo(row).stale }">
+                <template v-if="trainInfo(row).stale">
+                  {{ trainInfo(row).checked }}最后一次确认，后端可能没有在运行
+                </template>
+                <template v-else>腾讯云状态 {{ trainInfo(row).checked }}确认</template>
+              </div>
+            </div>
           </template>
         </el-table-column>
         <el-table-column label="创建时间" width="160">
@@ -516,5 +611,74 @@ onBeforeUnmount(() => {
 .mini-player {
   width: 100%;
   height: 32px;
+}
+
+.train-tip {
+  margin-bottom: 12px;
+}
+
+.train-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  padding: 2px 0;
+
+  .train-detail {
+    font-size: 12px;
+    color: #606266;
+  }
+
+  .train-progress {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+
+    .el-progress {
+      flex: 1;
+      max-width: 260px;
+    }
+
+    .train-eta {
+      font-size: 12px;
+      color: #606266;
+      white-space: nowrap;
+      cursor: help;
+      border-bottom: 1px dashed #c0c4cc;
+    }
+  }
+
+  .train-checked {
+    width: 100%;
+    font-size: 11px;
+    color: #909399;
+
+    &.stale {
+      color: #e6a23c;
+    }
+  }
+
+  // 训练中的呼吸点，表示正在进行
+  .pulse {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    margin-right: 5px;
+    border-radius: 50%;
+    background: currentColor;
+    vertical-align: middle;
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
 }
 </style>

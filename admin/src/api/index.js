@@ -119,9 +119,14 @@ export const downloadCertificate = (no) =>
 /** 以 MP3 格式下载作品（上游多为 M4A，由服务端转码） */
 export const downloadSongMp3 = (taskId) => downloadFile(`/songs/mp3?task_id=${taskId}`, `作品-${taskId}.mp3`)
 export const fetchVoices = (params) => http.get('/voices', { params })
+// 演唱音色（Mureka）：创作时直接用这个声音演唱
+export const fetchVocals = (params) => http.get('/vocals', { params })
+export const createVocal = (payload) => http.post('/vocals/create', payload, { timeout: 3 * 60 * 1000 })
+export const deleteVocal = (id) => http.post('/vocals/delete', { id })
 export const trainVoice = (payload) => http.post('/voices/train', payload)
 export const deleteVoice = (id) => http.post('/voices/delete', { id })
-export const coverWithVoice = (payload) => http.post('/voices/cover', payload)
+// 翻唱作品库里的歌要先转 MP3，首次可能要几十秒
+export const coverWithVoice = (payload) => http.post('/voices/cover', payload, { timeout: 3 * 60 * 1000 })
 // 音频较大，放宽超时并透出上传进度
 export const uploadSample = (form, onUploadProgress) =>
   http.post('/voices/sample', form, { timeout: 5 * 60 * 1000, onUploadProgress })
@@ -147,7 +152,7 @@ export const fetchTasks = (params) => http.get('/tasks', { params })
 export const fetchTaskDetail = (id) => http.get('/tasks/detail', { params: { id } })
 export const refundTask = (payload) => http.post('/tasks/refund', payload)
 // 失败任务不退积分，可免费重试
-export const retryTask = (id) => http.post('/tasks/retry', { id })
+export const retryTask = (id) => http.post('/tasks/retry', { id }, { timeout: 3 * 60 * 1000 })
 
 /* ---------------------------------- 积分 ---------------------------------- */
 
