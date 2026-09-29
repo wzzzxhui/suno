@@ -16,7 +16,7 @@ var testPricing = Pricing{
 func TestQuote(t *testing.T) {
 	// 与 2026-09 实测的 176.4 秒歌曲一致：15 个镜头，每段约 11.8 秒按 12 秒计费
 	eco := testPricing.Quote(Plan(176.4, "", PlanOptions{Tier: model.MVTierEconomy}), "480p", false)
-	if eco.Shots != 15 || eco.Images != 15 || eco.Cost != 300 || eco.Price != 600 {
+	if eco.Shots != 15 || eco.Images != 15 || eco.Cost != 300 || eco.Price != 0 {
 		t.Fatalf("经济版报价不对（实测上游扣 300）: %+v", eco)
 	}
 
@@ -26,7 +26,7 @@ func TestQuote(t *testing.T) {
 		t.Fatalf("高级版 480p 成本不对: %+v", pre)
 	}
 	hd := testPricing.Quote(Plan(176.4, "", PlanOptions{Tier: model.MVTierPremium}), "1080p", false)
-	if hd.Cost != 15*200 || hd.Price != 6000 {
+	if hd.Cost != 15*200 || hd.Price != 0 {
 		t.Fatalf("高级版 1080p 报价不对: %+v", hd)
 	}
 
@@ -47,7 +47,7 @@ func TestQuote(t *testing.T) {
 		t.Fatalf("图片镜头不需要首帧: %+v", img)
 	}
 
-	if short := testPricing.Quote(Plan(5, "", PlanOptions{Tier: model.MVTierEconomy}), "480p", false); short.Price != 100 {
+	if short := testPricing.Quote(Plan(5, "", PlanOptions{Tier: model.MVTierEconomy}), "480p", false); short.Price != 0 {
 		t.Fatalf("应不低于最低价: %+v", short)
 	}
 }

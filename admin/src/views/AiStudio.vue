@@ -32,11 +32,6 @@ const vendors = computed(() => {
 
 const currentMerchant = computed(() => merchants.value.find((m) => m.id === form.merchant_id))
 
-const balanceEnough = computed(() => {
-  if (!currentMerchant.value || !current.value) return true
-  return currentMerchant.value.points >= current.value.price
-})
-
 /* ---------------------------------- 加载 ---------------------------------- */
 
 async function loadCapabilities() {
@@ -96,7 +91,7 @@ async function submit() {
       kind: current.value.kind,
       payload: form.payload
     })
-    ElMessage.success(`已提交，扣除 ${data.cost} 积分，余额 ${thousands(data.balance)}`)
+    ElMessage.success('已提交')
     startTracking(data.task_ids, current.value)
     loadMerchants()
   } finally {
@@ -124,7 +119,7 @@ function startTracking(ids, cap) {
   }
 }
 
-// 生成失败不退积分，可用原参数免费重试，任务编号不变
+// 生成失败不退积分，可用原参数重试，任务编号不变
 async function retryItem(item) {
   item.retrying = true
   try {
@@ -208,7 +203,7 @@ onBeforeUnmount(() => {
     <div class="page-header">
       <div>
         <h2>图像视频</h2>
-        <p class="desc">与音乐共用同一个上游账户与密钥，积分从所选商户扣除</p>
+        <p class="desc">与音乐共用同一个上游账户与密钥，由平台账号处理</p>
       </div>
       <el-radio-group v-model="group">
         <el-radio-button v-for="g in GROUPS" :key="g.key" :value="g.key">{{ g.label }}</el-radio-button>
@@ -231,7 +226,6 @@ onBeforeUnmount(() => {
             >
               <div class="cap-label">{{ cap.label }}</div>
               <div class="cap-desc">{{ cap.desc }}</div>
-              <div class="cap-price">{{ cap.price }} 积分/次</div>
             </div>
           </div>
         </el-card>
@@ -247,11 +241,10 @@ onBeforeUnmount(() => {
           <el-form :model="form" label-width="92px">
             <el-form-item label="归属商户" required>
               <el-select v-model="form.merchant_id" filterable placeholder="请选择商户" style="width: 100%">
-                <el-option v-for="m in merchants" :key="m.id" :label="`${m.name}（余额 ${m.points}）`" :value="m.id" />
+                <el-option v-for="m in merchants" :key="m.id" :label="m.name" :value="m.id" />
               </el-select>
               <div v-if="currentMerchant && current" class="text-muted" style="font-size: 12px; margin-top: 4px">
-                本次消耗 {{ current.price }} 积分，当前余额 {{ thousands(currentMerchant.points) }}
-                <span v-if="!balanceEnough" style="color: #f56c6c">（余额不足）</span>
+                由平台账号处理
               </div>
             </el-form-item>
 
@@ -301,10 +294,10 @@ onBeforeUnmount(() => {
                 type="primary"
                 size="large"
                 :loading="submitting"
-                :disabled="!balanceEnough || !current"
+                :disabled="!current"
                 @click="submit"
               >
-                提交生成（扣 {{ current?.price || 0 }} 积分）
+                提交生成
               </el-button>
             </el-form-item>
           </el-form>
@@ -371,9 +364,9 @@ onBeforeUnmount(() => {
             </template>
 
             <div v-else-if="item.status === 'failed'" style="color: #f56c6c; font-size: 13px">
-              {{ item.task?.error_message || '生成失败' }}，积分不退还
+              {{ item.task?.error_message || '生成失败' }}
               <el-button link type="primary" size="small" :loading="item.retrying" @click="retryItem(item)">
-                免费重试
+                重试
               </el-button>
             </div>
           </div>

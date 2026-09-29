@@ -102,7 +102,7 @@ function canRetry(row) {
 async function handleRetry(row) {
   await ElMessageBox.confirm(
     `将用原参数重新提交任务 #${row.id}，不额外扣积分（第 ${(row.retry_count || 0) + 1}/${maxRetries.value} 次重试）。`,
-    '免费重试',
+    '重试',
     { type: 'info', confirmButtonText: '重试' }
   )
   await retryTask(row.id)
@@ -116,7 +116,7 @@ async function handleRetry(row) {
 // 失败任务默认不退积分，人工退款仅供客服特殊情况下使用
 async function handleRefund(row) {
   await ElMessageBox.confirm(
-    `失败任务默认不退积分、可免费重试。确定要向「${row.merchant_name}」人工退还 ${row.points_cost} 积分吗？`,
+    `失败任务默认不退积分、可重试。确定要向「${row.merchant_name}」人工退还 ${row.points_cost} 积分吗？`,
     '人工退款',
     { type: 'warning' }
   )
@@ -221,7 +221,7 @@ onMounted(async () => {
         <el-table-column label="操作" width="190" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="openDetail(row)">详情</el-button>
-            <el-button v-if="canRetry(row)" link type="success" @click="handleRetry(row)">免费重试</el-button>
+            <el-button v-if="canRetry(row)" link type="success" @click="handleRetry(row)">重试</el-button>
             <el-button v-if="canRefund(row)" link type="warning" @click="handleRefund(row)">退款</el-button>
           </template>
         </el-table-column>
@@ -299,7 +299,7 @@ onMounted(async () => {
 
           <div v-if="canRetry(detail) || canRefund(detail)" style="margin-top: 16px">
             <el-button v-if="canRetry(detail)" type="success" @click="handleRetry(detail)">
-              免费重试（已重试 {{ detail.retry_count || 0 }}/{{ maxRetries }} 次）
+              重试（已重试 {{ detail.retry_count || 0 }}/{{ maxRetries }} 次）
             </el-button>
             <el-button v-if="canRefund(detail)" type="warning" plain @click="handleRefund(detail)">人工退还积分</el-button>
           </div>

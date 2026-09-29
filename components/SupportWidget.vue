@@ -24,7 +24,7 @@ const open = ref(false)
         <ul class="mt-3 space-y-1.5 text-sm text-gray-300">
           <li>· 接口报错 / 参数校验失败</li>
           <li>· 任务长时间未完成</li>
-          <li>· 积分与账单问题</li>
+          <li>· 使用与任务问题</li>
         </ul>
         <NuxtLink to="/about" class="btn-ghost w-full mt-4 text-sm" @click="open = false">
           查看联系方式

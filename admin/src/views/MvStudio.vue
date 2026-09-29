@@ -13,7 +13,8 @@ import {
   retryMv,
   rewriteMv,
   saveMvStoryboard,
-  startMv
+  startMv,
+  callAdvancedTool
 } from '@/api'
 import { formatTime, thousands } from '@/utils/format'
 import MvLookEditor, { emptyLook, fromLook, toLookPayload } from '@/components/MvLookEditor.vue'
@@ -47,6 +48,42 @@ const MODES = [
   { key: 'auto', title: 'AI 一键生成', desc: 'AI 读歌词写好分镜后直接开拍，全程无需操作' },
   { key: 'manual', title: '分镜精修', desc: 'AI 先写分镜草稿，你逐段调整画面后再开拍' }
 ]
+
+const mvProviderMode = ref('suno')
+const advancedVideo = reactive({
+  operation: 'video_generate',
+  params: JSON.stringify({ song_id: '', prompt: '夜晚的城市街道，电影感镜头', duration: 5, ratio: '16:9', resolution: '720p' }, null, 2),
+  task_id: '',
+  result: null,
+  loading: false
+})
+
+async function runAdvancedVideo() {
+  let params = {}
+  if (advancedVideo.operation !== 'video_query') {
+    try {
+      params = JSON.parse(advancedVideo.params)
+      if (!params || Array.isArray(params) || typeof params !== 'object') throw new Error()
+    } catch {
+      return ElMessage.warning('请输入合法的 JSON 参数对象')
+    }
+  } else if (!advancedVideo.task_id.trim()) {
+    return ElMessage.warning('请填写视频任务 ID')
+  }
+  advancedVideo.loading = true
+  try {
+    const data = await callAdvancedTool({
+      operation: advancedVideo.operation,
+      task_id: advancedVideo.task_id.trim(),
+      params
+    })
+    advancedVideo.result = data.result
+    if (data.result?.id) advancedVideo.task_id = data.result.id
+    ElMessage.success('操作已完成')
+  } finally {
+    advancedVideo.loading = false
+  }
+}
 
 const route = useRoute()
 
@@ -124,9 +161,6 @@ const creating = ref(false)
 const selectedSong = computed(() => songs.value.find((s) => s.task_id === form.song_task_id))
 const segmentCount = computed(() => Math.max(1, Math.ceil(duration(selectedSong.value) / MAX_CLIP)))
 const tooLong = computed(() => duration(selectedSong.value) > meta.max_duration)
-const quote = computed(() => quotes.value[form.tier]?.price || 0)
-const balanceEnough = computed(() => !currentMerchant.value || currentMerchant.value.points >= quote.value)
-const canAfford = (points) => !currentMerchant.value || currentMerchant.value.points >= points
 
 async function create() {
   if (!form.song_task_id) return ElMessage.warning('请选择要制作 MV 的作品')
@@ -135,7 +169,7 @@ async function create() {
   if (form.mode === 'auto') {
     await ElMessageBox.confirm(
       `将以「${TIERS.find((t) => t.key === form.tier).title}」为「${selectedSong.value.title}」制作约 ${segmentCount.value} 个镜头的 MV，` +
-        `从商户「${currentMerchant.value?.name}」扣除 ${quote.value} 积分。生成失败不退积分，可免费重试。`,
+        '生成失败后可重试。',
       'AI 一键生成 MV',
       { type: 'info', confirmButtonText: '开始生成' }
     )
@@ -144,7 +178,7 @@ async function create() {
   creating.value = true
   try {
     const p = await createMv({ merchant_id: merchantId.value, ...form, look: toLookPayload(look.value) })
-    ElMessage.success(form.mode === 'auto' ? `已开始生成，扣除 ${quote.value} 积分` : '分镜草稿已生成，请逐段调整后开拍')
+    ElMessage.success(form.mode === 'auto' ? '已开始生成' : '分镜草稿已生成，请逐段调整后开拍')
     loadMerchants()
     await loadProjects()
     openDetail(p.id)
@@ -296,7 +330,7 @@ async function rewrite() {
 async function start() {
   await ElMessageBox.confirm(
     `将按当前分镜生成 ${shotCounts.value.video} 段视频、${shotCounts.value.image} 张图片并合成 MV，` +
-      `扣除 ${detail.value.quote} 积分。生成失败不退积分，可免费重试。`,
+      '生成失败后可重试。',
     '开始生成',
     { type: 'info', confirmButtonText: '开始生成' }
   )
@@ -304,7 +338,7 @@ async function start() {
   try {
     if (dirty.value) await save(true)
     const data = await startMv(detail.value.id)
-    ElMessage.success(`已开始生成，扣除 ${data.cost} 积分，余额 ${thousands(data.balance)}`)
+    ElMessage.success('已开始生成')
     loadMerchants()
     loadProjects()
     await refreshDetail(detail.value.id, true)
@@ -313,19 +347,14 @@ async function start() {
   }
 }
 
-// 失败不退积分，重试免费；早期已退过款的 MV 重试时按原报价扣费
-const retryCost = () => 0
-
 async function retry(p = detail.value) {
-  const cost = retryCost(p)
   await ElMessageBox.confirm(
-    `已完成的 ${p.segment_done} 个镜头会保留，只重新生成剩下的镜头并合成。` +
-      (cost ? `该 MV 此前已退款，本次按原报价扣除 ${cost} 积分。` : '本次重试免费。'),
+    `已完成的 ${p.segment_done} 个镜头会保留，只重新生成剩下的镜头并合成。`,
     '重试 MV',
     { type: 'info', confirmButtonText: '重试' }
   )
-  const data = await retryMv(p.id)
-  ElMessage.success(data.cost ? `已重新开始，扣除 ${data.cost} 积分，余额 ${thousands(data.balance)}` : '已重新开始，本次免费')
+  await retryMv(p.id)
+  ElMessage.success('已重新开始')
   loadMerchants()
   loadProjects()
   if (drawer.value && detail.value?.id === p.id) await refreshDetail(p.id, true)
@@ -369,8 +398,45 @@ onBeforeUnmount(() => {
       <el-button :icon="'Refresh'" @click="loadProjects">刷新</el-button>
     </div>
 
+    <el-tabs v-model="mvProviderMode" style="margin-bottom: 12px">
+      <el-tab-pane label="普通模式" name="suno" />
+      <el-tab-pane label="高级模式" name="mureka" />
+    </el-tabs>
+
+    <el-card v-if="mvProviderMode === 'mureka'" shadow="never">
+      <template #header>
+        <div style="display: flex; justify-content: space-between; align-items: center">
+          <span>高级视频创作</span>
+          <router-link :to="{ path: '/guide', query: { tool: advancedVideo.operation } }" target="_blank">当前功能教程 ↗</router-link>
+        </div>
+      </template>
+      <el-form label-width="100px">
+        <el-form-item label="功能">
+          <el-radio-group v-model="advancedVideo.operation">
+            <el-radio-button value="video_generate">生成视频</el-radio-button>
+            <el-radio-button value="lyrics_video">歌词视频</el-radio-button>
+            <el-radio-button value="video_query">查询任务</el-radio-button>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item v-if="advancedVideo.operation === 'video_query'" label="视频任务 ID">
+          <el-input v-model="advancedVideo.task_id" placeholder="生成视频后返回的任务 ID" />
+        </el-form-item>
+        <el-form-item v-else label="参数">
+          <div style="width: 100%">
+            <el-input v-model="advancedVideo.params" type="textarea" :rows="10" placeholder="填写视频创作参数 JSON" />
+            <router-link :to="{ path: '/guide', query: { tool: advancedVideo.operation } }" target="_blank">查看参数格式与示例 ↗</router-link>
+          </div>
+        </el-form-item>
+        <el-form-item>
+          <el-button type="primary" :loading="advancedVideo.loading" @click="runAdvancedVideo">执行</el-button>
+          <span v-if="advancedVideo.result?.id" class="text-muted" style="margin-left: 10px">任务 ID：{{ advancedVideo.result.id }}</span>
+        </el-form-item>
+      </el-form>
+      <pre v-if="advancedVideo.result !== null" style="max-height: 400px; overflow: auto; white-space: pre-wrap; word-break: break-all">{{ JSON.stringify(advancedVideo.result, null, 2) }}</pre>
+    </el-card>
+
     <el-alert
-      v-if="!meta.ready"
+      v-if="mvProviderMode === 'suno' && !meta.ready"
       type="error"
       show-icon
       :closable="false"
@@ -379,7 +445,7 @@ onBeforeUnmount(() => {
       description="请在后端 .env 中填写 TME_COS_* 配置后重启服务"
     />
 
-    <el-row :gutter="12">
+    <el-row v-if="mvProviderMode === 'suno'" :gutter="12">
       <!-- 新建 -->
       <el-col :xs="24" :lg="10" style="margin-bottom: 12px">
         <el-card shadow="never" body-style="padding:16px">
@@ -391,8 +457,7 @@ onBeforeUnmount(() => {
                 <el-option v-for="m in merchants" :key="m.id" :label="m.name" :value="m.id" />
               </el-select>
               <div v-if="currentMerchant" class="text-muted hint">
-                当前余额 {{ thousands(currentMerchant.points) }} 积分
-                <span v-if="selectedSong && !balanceEnough" style="color: #f56c6c">（不足 {{ quote }}，请先充值）</span>
+                由平台账号处理
               </div>
             </el-form-item>
 
@@ -427,7 +492,7 @@ onBeforeUnmount(() => {
                 >
                   <div class="mode-title">
                     {{ t.title }}
-                    <span v-if="quotes[t.key]" class="tier-price">{{ quotes[t.key].price }} 积分</span>
+
                   </div>
                   <div class="mode-desc">{{ t.desc }}</div>
                   <div v-if="quotes[t.key]" class="mode-desc">
@@ -438,9 +503,9 @@ onBeforeUnmount(() => {
               <div class="text-muted hint">
                 <template v-if="quoting">正在计算报价…</template>
                 <template v-else-if="quotes[form.tier]">
-                  固定价，按镜头构成计算；上游成本约 {{ quotes[form.tier].cost }} 积分
+                  由平台账号处理，可按需要选择档位
                 </template>
-                <template v-else>选择作品后显示各档位报价</template>
+                <template v-else>选择作品后显示各档位镜头构成</template>
               </div>
             </el-form-item>
 
@@ -514,18 +579,18 @@ onBeforeUnmount(() => {
               <el-button
                 type="primary"
                 :loading="creating"
-                :disabled="!meta.ready || !form.song_task_id || tooLong || !quote || (form.mode === 'auto' && !balanceEnough)"
+                :disabled="!meta.ready || !form.song_task_id || tooLong || (form.mode === 'auto' && !quotes[form.tier])"
                 @click="create"
               >
-                {{ form.mode === 'auto' ? `一键生成（${quote} 积分）` : '生成分镜草稿（免费）' }}
+                {{ form.mode === 'auto' ? '一键生成' : '生成分镜草稿' }}
               </el-button>
               <div class="text-muted hint">
-                {{ creating ? '正在按歌词切分镜…' : '固定价，开始前即确定；生成失败不退积分，可免费重试' }}
+                {{ creating ? '正在按歌词切分镜…' : '生成失败后可重试' }}
               </div>
             </el-form-item>
           </el-form>
           <div class="text-muted hint">
-            提示：设置参考图后，视频镜头会先按参考图画出首帧再生成视频，每段多一张图的成本，已计入报价
+            提示：设置参考图后，视频镜头会先按参考图画出首帧再生成视频，每段会额外生成一张图
           </div>
         </el-card>
       </el-col>
@@ -608,11 +673,11 @@ onBeforeUnmount(() => {
           :closable="false"
           show-icon
           :title="detail.error_message || '生成失败'"
-          description="失败不退积分，可免费重试；已完成的镜头会保留"
+          description="生成失败可重试；已完成的镜头会保留"
           style="margin: 12px 0"
         >
           <el-button size="small" type="warning" style="margin-top: 6px" @click="retry()">
-            {{ retryCost(detail) ? `重试（${retryCost(detail)} 积分）` : '免费重试' }}
+            重试
           </el-button>
         </el-alert>
         <video v-if="detail.video_url" :src="detail.video_url" controls class="final-video" />
@@ -701,10 +766,10 @@ onBeforeUnmount(() => {
         <el-button
           type="primary"
           :loading="busy.start"
-          :disabled="!canAfford(detail?.quote) || lookChanged"
+          :disabled="lookChanged"
           @click="start"
         >
-          开始生成（{{ detail?.quote }} 积分）
+          开始生成
         </el-button>
       </template>
     </el-drawer>

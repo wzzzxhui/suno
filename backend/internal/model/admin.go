@@ -147,7 +147,7 @@ var KindLabels = map[TaskKind]string{
 	KindVoiceTrain:    "训练音色",
 	KindVoiceCover:    "音色翻唱",
 	KindVoiceClone:    "创建演唱音色",
-	KindVoiceSong:     "音色演唱创作",
+	KindVoiceSong:     "高级音乐创作",
 }
 
 // LabelOf 返回任务类型的中文名，未知类型回退为原始值。

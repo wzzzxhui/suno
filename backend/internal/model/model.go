@@ -25,7 +25,7 @@ const (
 
 	// 演唱音色走 Mureka：上传清唱得到演唱音色，创作时直接用它演唱，不经过先生成再翻唱
 	KindVoiceClone TaskKind = "voice_clone" // 创建演唱音色（同步完成）
-	KindVoiceSong  TaskKind = "voice_song"  // 用演唱音色创作歌曲
+	KindVoiceSong  TaskKind = "voice_song"  // 高级模式音乐创作（沿用已有任务类型）
 )
 
 // TaskStatus 任务状态。
@@ -153,7 +153,7 @@ type PointLog struct {
 	CreatedAt  time.Time `json:"created_at"`
 }
 
-// Price 各任务类型消耗的积分（1 积分 = 0.01 元）。
+// Price 保留旧版定价数据；商户实际费用由 PriceOf 统一返回零。
 var Price = map[TaskKind]int64{
 	KindGenerate:      36,
 	KindSound:         10,
@@ -175,10 +175,10 @@ var Price = map[TaskKind]int64{
 	KindVoiceSong:  36,
 }
 
-// CopyrightAudioSurcharge 使用受版权保护音频时的额外扣费。
-const CopyrightAudioSurcharge int64 = 15
+// CopyrightAudioSurcharge 使用受版权保护音频时的商户附加费。
+const CopyrightAudioSurcharge int64 = 0
 
-// PriceOf 返回任务类型的标准价格。
+// PriceOf 返回任务类型对商户的收费；平台服务免费。
 func PriceOf(kind TaskKind) int64 {
-	return Price[kind]
+	return 0 // 平台服务对商户免费；上游成本由平台账号承担。
 }

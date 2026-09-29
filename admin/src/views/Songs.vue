@@ -8,12 +8,12 @@ import {
   fetchCertificate,
   fetchMerchantOptions,
   fetchSongs,
+  fetchTaskDetail,
   generateVideo,
   issueCertificate
 } from '@/api'
 import { TASK_STATUS, formatTime, playableUrl, thousands } from '@/utils/format'
 
-const VIDEO_COST = 1 // 生成 MV 消耗积分，与后端定价一致
 
 const loading = ref(false)
 const list = ref([])
@@ -49,6 +49,52 @@ function reset() {
   search()
 }
 
+/* ---------------------------------- 歌词 ---------------------------------- */
+
+const lyricsDialog = reactive({ visible: false, loading: false, song: null, text: '' })
+
+function parseJSON(value) {
+  if (value && typeof value === 'object') return value
+  if (!value || typeof value !== 'string') return null
+  try {
+    return JSON.parse(value)
+  } catch {
+    return null
+  }
+}
+
+function songLyrics(song, detail) {
+  const task = detail?.task || {}
+  const request = parseJSON(detail?.request_payload)
+  if (request?.make_instrumental === true || request?.operation === 'instrumental') return ''
+  const extend = parseJSON(task.extend)
+  const clips = Array.isArray(extend) ? extend : extend ? [extend] : []
+  const clip = clips.find((item) => item?.id === song.custom_id) || clips[0]
+  const generated = clip?.metadata?.prompt || clip?.metadata?.lyrics || clip?.lyrics
+  if (typeof generated === 'string' && generated.trim()) return generated.trim()
+
+  if (!request) return ''
+  if (typeof request.lyrics === 'string' && request.lyrics.trim()) return request.lyrics.trim()
+  if (['generate', 'extend', 'cover'].includes(task.kind) && typeof request.prompt === 'string' && request.prompt.trim()) {
+    return request.prompt.trim()
+  }
+  return ''
+}
+
+async function openLyrics(song) {
+  Object.assign(lyricsDialog, { visible: true, loading: true, song, text: '' })
+  try {
+    const detail = await fetchTaskDetail(song.task_id)
+    if (lyricsDialog.song?.task_id === song.task_id) {
+      lyricsDialog.text = songLyrics(song, detail)
+    }
+  } catch {
+    if (lyricsDialog.song?.task_id === song.task_id) lyricsDialog.visible = false
+  } finally {
+    if (lyricsDialog.song?.task_id === song.task_id) lyricsDialog.loading = false
+  }
+}
+
 /* ---------------------------------- MV ---------------------------------- */
 
 const creating = ref(0)
@@ -63,7 +109,7 @@ function videoState(song) {
 
 async function createVideo(song) {
   await ElMessageBox.confirm(
-    `将为「${song.title}」生成 MV，从商户「${song.merchant_name}」扣除 ${VIDEO_COST} 积分。`,
+    `将为「${song.title}」生成 MV。`,
     '生成音乐视频',
     { type: 'info' }
   )
@@ -71,7 +117,7 @@ async function createVideo(song) {
   creating.value = song.task_id
   try {
     const data = await generateVideo({ task_id: song.task_id })
-    ElMessage.success(`已提交，扣除 ${data.cost} 积分，余额 ${thousands(data.balance)}`)
+    ElMessage.success('已提交生成')
     await load()
   } finally {
     creating.value = 0
@@ -85,7 +131,7 @@ const deleting = ref(0)
 async function removeSong(song) {
   await ElMessageBox.confirm(
     `将永久删除「${song.title}」及其 MV、下载等关联记录，并清空其中保存的音频、封面与视频地址，删除后无法恢复。` +
-      '已扣积分不会退还，积分流水保留。',
+      '删除后无法恢复。',
     '删除作品',
     { type: 'warning', confirmButtonText: '确认删除', confirmButtonClass: 'el-button--danger' }
   )
@@ -127,7 +173,6 @@ async function openCertificate(song) {
 }
 
 const certIssued = computed(() => cert.info?.certificate)
-const certAffordable = computed(() => !cert.info || cert.info.balance >= cert.info.price)
 
 async function submitCertificate() {
   if (!cert.author.trim()) {
@@ -139,7 +184,7 @@ async function submitCertificate() {
     const data = await issueCertificate({ task_id: cert.song.task_id, author: cert.author.trim() })
     cert.info = { ...cert.info, certificate: data.certificate, verify_url: data.verify_url, balance: data.balance }
     ElMessage.success(
-      data.charged ? `已签发，扣除 ${data.certificate.points_cost} 积分，余额 ${thousands(data.balance)}` : '该作品已有创作证明'
+      '创作证明已签发'
     )
     cert.song.certificate_no = data.certificate.certificate_no
     await download(data.certificate.certificate_no)
@@ -229,7 +274,7 @@ onBeforeUnmount(() => {
     <div class="page-header">
       <div>
         <h2>作品库</h2>
-        <p class="desc">共 {{ total }} 首已完成作品，可试听、下载 MP3、生成 MV 与签发创作证明</p>
+        <p class="desc">共 {{ total }} 首已完成作品，可查看歌词、试听、下载 MP3、生成 MV 与签发创作证明</p>
       </div>
       <el-button :icon="'Refresh'" @click="load">刷新</el-button>
     </div>
@@ -294,6 +339,10 @@ onBeforeUnmount(() => {
             <div class="id-row mono">
               <span class="id" :title="song.custom_id">{{ song.custom_id }}</span>
               <el-button link type="primary" size="small" @click="copyText(song.custom_id)">复制</el-button>
+            </div>
+
+            <div class="song-actions">
+              <el-button link type="primary" size="small" @click="openLyrics(song)">查看歌词</el-button>
             </div>
 
             <div class="cert-row">
@@ -392,6 +441,17 @@ onBeforeUnmount(() => {
       </div>
     </el-card>
 
+    <el-dialog v-model="lyricsDialog.visible" :title="'歌词 · ' + (lyricsDialog.song?.title || '')" width="620px" destroy-on-close>
+      <div v-loading="lyricsDialog.loading" class="lyrics-dialog">
+        <pre v-if="lyricsDialog.text" class="lyrics-text">{{ lyricsDialog.text }}</pre>
+        <el-empty v-else-if="!lyricsDialog.loading" description="这首作品暂无可查看的歌词" :image-size="80" />
+      </div>
+      <template #footer>
+        <el-button @click="lyricsDialog.visible = false">关闭</el-button>
+        <el-button v-if="lyricsDialog.text" type="primary" @click="copyText(lyricsDialog.text)">复制歌词</el-button>
+      </template>
+    </el-dialog>
+
     <el-dialog v-model="cert.visible" :title="`创作证明 · ${cert.song?.title || ''}`" width="560px" destroy-on-close>
       <div v-loading="cert.loading" class="cert-dialog">
         <template v-if="certIssued">
@@ -408,7 +468,7 @@ onBeforeUnmount(() => {
               <el-link :href="cert.info.verify_url" target="_blank" type="primary">{{ cert.info.verify_url }}</el-link>
             </el-descriptions-item>
           </el-descriptions>
-          <p class="text-muted tip">证明已签发，重复下载不再扣费。署名在签发时固定，不能修改。</p>
+          <p class="text-muted tip">证明已签发，可重复下载。署名在签发时固定，不能修改。</p>
         </template>
 
         <template v-else-if="cert.info">
@@ -417,8 +477,7 @@ onBeforeUnmount(() => {
               生成一份 PDF 创作证明，包含作品信息、歌词和签发时音频文件的 SHA-256 指纹，可凭证书编号在线核验。
             </p>
             <p>
-              首次签发从商户「{{ cert.info.merchant_name }}」扣除 <b>{{ cert.info.price }}</b> 积分（当前余额
-              {{ thousands(cert.info.balance) }}），之后重复下载免费。
+              签发后可重复下载。
             </p>
           </el-alert>
           <el-form label-width="80px" class="cert-form" @submit.prevent>
@@ -443,17 +502,17 @@ onBeforeUnmount(() => {
             下载 PDF
           </el-button>
         </template>
-        <el-tooltip v-else :disabled="certAffordable" content="商户积分不足，请先充值" placement="top">
+        <div v-else>
           <el-button
             type="primary"
             :icon="'Stamp'"
             :loading="cert.issuing"
-            :disabled="cert.loading || !certAffordable"
+            :disabled="cert.loading"
             @click="submitCertificate"
           >
-            签发并下载（{{ cert.info?.price ?? '—' }} 积分）
+            签发并下载
           </el-button>
-        </el-tooltip>
+        </div>
       </template>
     </el-dialog>
 
@@ -583,6 +642,25 @@ onBeforeUnmount(() => {
   .mp3-btn {
     margin-left: auto;
   }
+}
+
+.song-actions {
+  margin-top: 4px;
+}
+
+.lyrics-dialog {
+  min-height: 100px;
+  max-height: min(65vh, 650px);
+  overflow: auto;
+}
+
+.lyrics-text {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.8;
 }
 
 .cert-dialog {

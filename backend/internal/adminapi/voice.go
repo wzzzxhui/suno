@@ -13,9 +13,11 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/lepro/suno-open-api/internal/httpx"
 	"github.com/lepro/suno-open-api/internal/model"
+	"github.com/lepro/suno-open-api/internal/musicreq"
 	"github.com/lepro/suno-open-api/internal/provider"
 	"github.com/lepro/suno-open-api/internal/storage"
 	"github.com/lepro/suno-open-api/internal/task"
@@ -181,6 +183,71 @@ func (s *Server) coverWithVoice(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	return s.submitVoiceTask(w, r, merchant.ID, model.KindVoiceCover, payload)
+}
+
+type vocalCoverRequest struct {
+	MerchantID int64  `json:"merchant_id"`
+	VoiceID    int64  `json:"voice_id"`
+	SongTaskID int64  `json:"song_task_id"`
+	AudioURL   string `json:"audio_url"`
+	Title      string `json:"title"`
+	Lyrics     string `json:"lyrics"`
+}
+
+// coverWithVocal 参考原曲并指定演唱音色重新生成歌曲；上游不会保留原伴奏。
+func (s *Server) coverWithVocal(w http.ResponseWriter, r *http.Request) error {
+	user, err := adminFrom(r)
+	if err != nil {
+		return err
+	}
+	var req vocalCoverRequest
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		return err
+	}
+	merchant, err := s.activeMerchant(r, req.MerchantID)
+	if err != nil {
+		return err
+	}
+	if req.VoiceID <= 0 {
+		return httpx.BadRequest("请选择已创建的高级演唱音色")
+	}
+	if _, _, err := s.vocalOf(r, req.VoiceID, merchant.ID); err != nil {
+		return err
+	}
+	title := strings.TrimSpace(req.Title)
+	lyrics := strings.TrimSpace(req.Lyrics)
+	if title == "" || utf8.RuneCountInString(title) > 100 {
+		return httpx.BadRequest("歌名需为 1~100 个字符")
+	}
+	if lyrics == "" || utf8.RuneCountInString(lyrics) > murekaLyricsMax {
+		return httpx.BadRequest("请填写 1~5000 个字符的歌词")
+	}
+	if (req.SongTaskID > 0) == (strings.TrimSpace(req.AudioURL) != "") {
+		return httpx.BadRequest("作品库歌曲和音频链接只能选择一个")
+	}
+	audioURL := strings.TrimSpace(req.AudioURL)
+	if req.SongTaskID > 0 {
+		if audioURL, err = s.songAudioOf(r, req.SongTaskID, merchant.ID); err != nil {
+			return err
+		}
+	} else if err := requireHTTPURL(audioURL); err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
+	defer cancel()
+	referenceID, err := s.vocal.UploadURL(ctx, "reference", audioURL)
+	if err != nil {
+		return httpx.BadRequest("上传原曲参考失败：" + err.Error())
+	}
+	generate := &adminGenerateRequest{
+		Generate:    musicreq.Generate{Title: title, Prompt: lyrics},
+		MerchantID:  merchant.ID,
+		Provider:    "mureka",
+		VoiceID:     req.VoiceID,
+		ReferenceID: referenceID,
+		MurekaModel: "auto",
+	}
+	return s.generateMureka(w, r, user, merchant, generate)
 }
 
 // voiceOf 取出音色的模型名，并确认音色已训练完成且属于该商户。

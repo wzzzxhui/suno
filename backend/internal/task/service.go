@@ -61,43 +61,24 @@ func New(store *storage.Store, p provider.Provider, cfg *config.Config) *Service
 	return &Service{store: store, provider: p, cfg: cfg}
 }
 
-// Submit 提交一次任务：先扣积分，再发往上游，最后落库。
-// surcharge 用于「受版权保护音频」这类额外扣费。
+// Submit 提交一次免费任务：发往上游后落库，商户不扣积分。
+// surcharge 保留旧接口参数，免费模式下不参与计费。
 func (s *Service) Submit(ctx context.Context, merchantID int64, kind model.TaskKind, payload map[string]interface{}, surcharge int64) ([]int64, error) {
-	cost := model.PriceOf(kind) + surcharge
-
-	if cost > 0 {
-		if _, err := s.store.Deduct(ctx, merchantID, cost, remarkOf(kind)); err != nil {
-			if errors.Is(err, storage.ErrInsufficientPoints) {
-				return nil, httpx.NoPoints("积分不足，请先充值")
-			}
-			return nil, err
-		}
-	}
-
 	result, err := s.provider.Submit(ctx, &provider.SubmitRequest{Kind: kind, Payload: payload})
 	if err != nil {
-		// 上游没收下任务，立即把积分退回去
-		if cost > 0 {
-			if _, refundErr := s.store.Recharge(ctx, merchantID, cost, model.PointRefund, "提交失败退还："+remarkOf(kind)); refundErr != nil {
-				log.Printf("[task] 退款失败 merchant=%d cost=%d: %v", merchantID, cost, refundErr)
-			}
-		}
 		log.Printf("[task] 提交上游失败 kind=%s: %v", kind, err)
 		return nil, httpx.Internal("提交上游失败：" + err.Error())
 	}
 
 	raw, _ := json.Marshal(payload)
-	costs := splitCost(cost, len(result.ProviderIDs))
-
 	ids := make([]int64, 0, len(result.ProviderIDs))
-	for i, providerID := range result.ProviderIDs {
+	for _, providerID := range result.ProviderIDs {
 		t := &model.Task{
 			MerchantID:     merchantID,
 			Kind:           kind,
 			ProviderTaskID: providerID,
 			ExtraParam:     remarkOf(kind),
-			PointsCost:     costs[i],
+			PointsCost:     0,
 			Request:        string(raw),
 		}
 		id, err := s.store.CreateTask(ctx, t)

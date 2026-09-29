@@ -104,7 +104,7 @@ onMounted(async () => {
   <div class="page">
     <div class="page-header">
       <div>
-        <h2>积分流水</h2>
+        <h2>历史积分流水</h2>
         <p class="desc">
           共 {{ total }} 条记录，本页入账 {{ thousands(pageSummary.income) }}、出账 {{ thousands(pageSummary.expense) }}
         </p>

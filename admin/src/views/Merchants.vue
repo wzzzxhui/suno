@@ -49,12 +49,12 @@ function reset() {
 
 const createVisible = ref(false)
 const creating = ref(false)
-const createForm = reactive({ name: '', points: 60, create_key: true })
+const createForm = reactive({ name: '', points: 0, create_key: true })
 const createdKey = ref('')
 
 function openCreate() {
   createForm.name = ''
-  createForm.points = 60
+  createForm.points = 0
   createForm.create_key = true
   createdKey.value = ''
   createVisible.value = true
@@ -189,13 +189,13 @@ onMounted(load)
       <el-table v-loading="loading" :data="list" stripe border style="width: 100%">
         <el-table-column prop="id" label="ID" width="70" />
         <el-table-column prop="name" label="商户名称" min-width="140" show-overflow-tooltip />
-        <el-table-column label="积分余额" width="130" align="right">
+        <el-table-column label="历史积分余额" width="130" align="right">
           <template #default="{ row }">
             <div style="font-weight: 600">{{ thousands(row.points) }}</div>
             <div class="text-muted mono">{{ toAmount(row.points) }}</div>
           </template>
         </el-table-column>
-        <el-table-column label="累计消耗" width="120" align="right">
+        <el-table-column label="历史累计消耗" width="120" align="right">
           <template #default="{ row }">{{ thousands(row.consumed_total) }}</template>
         </el-table-column>
         <el-table-column label="密钥" width="80" align="center">
@@ -255,10 +255,6 @@ onMounted(load)
         <el-form :model="createForm" label-width="96px">
           <el-form-item label="商户名称" required>
             <el-input v-model="createForm.name" placeholder="例如：某某科技" />
-          </el-form-item>
-          <el-form-item label="赠送积分">
-            <el-input-number v-model="createForm.points" :min="0" :step="10" />
-            <span class="text-muted" style="margin-left: 8px">{{ toAmount(createForm.points) }}</span>
           </el-form-item>
           <el-form-item label="同时建密钥">
             <el-switch v-model="createForm.create_key" />

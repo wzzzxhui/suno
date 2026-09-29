@@ -3,6 +3,9 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   coverWithVoice,
+  coverWithVocal,
+  createVocal,
+  fetchVocals,
   deleteVoice,
   fetchMerchants,
   fetchSongs,
@@ -30,7 +33,6 @@ async function loadMerchants() {
 const voices = ref([])
 const voicesLoading = ref(false)
 const configured = ref(true)
-const prices = reactive({ train: 0, cover: 0 })
 const defaultVoice = ref({ model_name: 'default', name: '官方默认音色' })
 const trainTimeout = ref(180) // 分钟，超过仍未完成会被判失败
 // 每轮训练耗时：有完成记录时为实际平均值（samples > 0），否则为配置的默认值
@@ -102,7 +104,6 @@ async function loadVoices() {
     const data = await fetchVoices({ merchant_id: merchantId.value })
     voices.value = data.list || []
     configured.value = data.configured
-    Object.assign(prices, data.prices || {})
     if (data.default) defaultVoice.value = data.default
     if (data.train_timeout_minutes) trainTimeout.value = data.train_timeout_minutes
     if (data.train_pace?.seconds_per_epoch) trainPace.value = data.train_pace
@@ -140,7 +141,7 @@ async function submitTrain() {
   training.value = true
   try {
     const data = await trainVoice({ merchant_id: merchantId.value, ...trainForm })
-    ElMessage.success(`已开始训练，扣除 ${data.cost} 积分，余额 ${thousands(data.balance)}`)
+    ElMessage.success('已开始训练')
     trainVisible.value = false
     loadMerchants()
     loadVoices()
@@ -151,7 +152,7 @@ async function submitTrain() {
 
 async function removeVoice(voice) {
   await ElMessageBox.confirm(
-    `将从音色库移除「${voice.name}」，之后无法再用它翻唱；已扣积分不退还。`,
+    `将从音色库移除「${voice.name}」，之后无法再用它翻唱。`,
     '删除音色',
     { type: 'warning', confirmButtonText: '确认删除', confirmButtonClass: 'el-button--danger' }
   )
@@ -162,6 +163,39 @@ async function removeVoice(voice) {
 }
 
 /* ---------------------------------- 翻唱 ---------------------------------- */
+
+const coverMode = ref('suno')
+const advancedVocals = ref([])
+const advancedVocalDialog = reactive({ visible: false, name: '', audio_url: '', creating: false })
+const advancedForm = reactive({ voice_id: null, lyrics: '', title: '' })
+
+async function loadAdvancedVocals() {
+  if (!merchantId.value) return
+  const data = await fetchVocals({ merchant_id: merchantId.value })
+  advancedVocals.value = (data.list || []).filter((v) => v.status === 'completed')
+  if (advancedForm.voice_id && !advancedVocals.value.some((v) => v.task_id === advancedForm.voice_id)) {
+    advancedForm.voice_id = null
+  }
+}
+
+async function createAdvancedVocal() {
+  if (!advancedVocalDialog.name.trim()) return ElMessage.warning('请填写演唱音色名称')
+  if (!/^https?:\/\//.test(advancedVocalDialog.audio_url.trim())) return ElMessage.warning('请上传或录制清唱样本')
+  advancedVocalDialog.creating = true
+  try {
+    const data = await createVocal({
+      merchant_id: merchantId.value,
+      name: advancedVocalDialog.name.trim(),
+      audio_url: advancedVocalDialog.audio_url.trim()
+    })
+    await loadAdvancedVocals()
+    advancedForm.voice_id = data.task_id
+    advancedVocalDialog.visible = false
+    ElMessage.success('演唱音色已创建')
+  } finally {
+    advancedVocalDialog.creating = false
+  }
+}
 
 const form = reactive({
   voice_id: 0,
@@ -187,12 +221,16 @@ async function searchSongs(keyword = '') {
   }
 }
 
-const balanceEnough = computed(() => !currentMerchant.value || currentMerchant.value.points >= prices.cover)
 
 function validate() {
   if (!merchantId.value) return '请选择归属商户'
   if (form.source === 'song' && !form.song_task_id) return '请选择要翻唱的作品'
   if (form.source === 'url' && !/^https?:\/\//.test(form.audio_url.trim())) return '请上传原曲或填写音频链接'
+  if (coverMode.value === 'mureka') {
+    if (!advancedForm.voice_id) return '请选择或创建高级演唱音色'
+    if (!advancedForm.title.trim()) return '请填写歌名'
+    if (!advancedForm.lyrics.trim()) return '请填写原曲歌词'
+  }
   return ''
 }
 
@@ -202,17 +240,15 @@ async function submitCover() {
 
   submitting.value = true
   try {
-    const payload = {
-      merchant_id: merchantId.value,
-      voice_id: form.voice_id,
-      separate: form.separate,
-      title: form.title
-    }
+    const advanced = coverMode.value === 'mureka'
+    const payload = advanced
+      ? { merchant_id: merchantId.value, voice_id: advancedForm.voice_id, title: advancedForm.title.trim(), lyrics: advancedForm.lyrics.trim() }
+      : { merchant_id: merchantId.value, voice_id: form.voice_id, separate: form.separate, title: form.title }
     if (form.source === 'song') payload.song_task_id = form.song_task_id
     else payload.audio_url = form.audio_url.trim()
 
-    const data = await coverWithVoice(payload)
-    ElMessage.success(`已提交，扣除 ${data.cost} 积分，余额 ${thousands(data.balance)}`)
+    const data = advanced ? await coverWithVocal(payload) : await coverWithVoice(payload)
+    ElMessage.success('已提交')
     startTracking(data.task_ids)
     loadMerchants()
     loadHistory()
@@ -226,7 +262,7 @@ async function submitCover() {
 const tracking = ref([])
 let timer = null
 
-// 生成失败不退积分，可用原参数免费重试，任务编号不变
+// 生成失败不退积分，可用原参数重试，任务编号不变
 async function retryItem(item) {
   item.retrying = true
   try {
@@ -276,7 +312,7 @@ const historyLoading = ref(false)
 async function loadHistory() {
   historyLoading.value = true
   try {
-    const data = await fetchTasks({ kind: 'voice_cover', merchant_id: merchantId.value || undefined, page: 1, size: 10 })
+    const data = await fetchTasks({ kind: coverMode.value === 'mureka' ? 'voice_song' : 'voice_cover', merchant_id: merchantId.value || undefined, page: 1, size: 10 })
     history.value = data.list || []
   } finally {
     historyLoading.value = false
@@ -286,10 +322,14 @@ async function loadHistory() {
 watch(merchantId, () => {
   form.voice_id = 0
   form.song_task_id = null
+  advancedForm.voice_id = null
+  loadAdvancedVocals()
   loadVoices()
   searchSongs()
   loadHistory()
 })
+
+watch(coverMode, loadHistory)
 
 onMounted(loadMerchants)
 
@@ -305,13 +345,13 @@ onBeforeUnmount(() => {
     <div class="page-header">
       <div>
         <h2>音色翻唱</h2>
-        <p class="desc">保留原曲旋律与伴奏，把人声换成指定音色；可上传一段唱歌干声训练专属音色</p>
+        <p class="desc">选择普通模式或高级模式，使用指定音色处理原曲。</p>
       </div>
       <el-button :icon="'Refresh'" @click="loadVoices(), loadHistory()">刷新</el-button>
     </div>
 
     <el-alert
-      v-if="!configured"
+      v-if="coverMode === 'suno' && !configured"
       type="warning"
       show-icon
       :closable="false"
@@ -326,18 +366,28 @@ onBeforeUnmount(() => {
         <el-card shadow="never" body-style="padding:16px">
           <template #header><span>翻唱参数</span></template>
 
+          <el-tabs v-model="coverMode" style="margin-bottom: 12px">
+            <el-tab-pane label="普通模式" name="suno" />
+            <el-tab-pane label="高级模式" name="mureka" />
+          </el-tabs>
+          <el-alert v-if="coverMode === 'mureka'" type="info" :closable="false" style="margin-bottom: 16px"
+            title="参考原曲重新演唱"
+            description="高级模式使用原曲前约 30 秒作音乐参考，按填写的歌词和自定义音色重新生成。编曲、旋律和时长可能变化，不保证保留原伴奏。" />
+          <p v-if="coverMode === 'mureka'" style="margin: -8px 0 16px">
+            <router-link :to="{ path: '/guide', query: { tool: 'cover_advanced' } }" target="_blank">查看高级模式参考重唱教程 ↗</router-link>
+          </p>
+
           <el-form label-width="96px">
             <el-form-item label="归属商户" required>
               <el-select v-model="merchantId" filterable placeholder="请选择商户" style="width: 100%">
                 <el-option v-for="m in merchants" :key="m.id" :label="m.name" :value="m.id" />
               </el-select>
               <div v-if="currentMerchant" class="text-muted hint">
-                当前余额 {{ thousands(currentMerchant.points) }} 积分，本次消耗 {{ prices.cover }} 积分
-                <span v-if="!balanceEnough" style="color: #f56c6c">（余额不足，请先充值）</span>
+                由平台账号处理
               </div>
             </el-form-item>
 
-            <el-form-item label="音色" required>
+            <el-form-item v-if="coverMode === 'suno'" label="音色" required>
               <el-select v-model="form.voice_id" style="width: 100%">
                 <el-option :value="0" :label="defaultVoice.name">
                   <span>{{ defaultVoice.name }}</span>
@@ -349,6 +399,15 @@ onBeforeUnmount(() => {
                 </el-option>
               </el-select>
               <div class="text-muted hint">想用自己的声音？在下方音色库上传唱歌干声训练专属音色</div>
+            </el-form-item>
+
+            <el-form-item v-if="coverMode === 'mureka'" label="演唱音色" required>
+              <div style="width: 100%">
+                <el-select v-model="advancedForm.voice_id" placeholder="选择已创建的演唱音色" style="width: 100%">
+                  <el-option v-for="v in advancedVocals" :key="v.task_id" :value="v.task_id" :label="v.name" />
+                </el-select>
+                <el-button link type="primary" @click="advancedVocalDialog.visible = true">上传清唱并创建音色</el-button>
+              </div>
             </el-form-item>
 
             <el-form-item label="原曲来源">
@@ -381,24 +440,33 @@ onBeforeUnmount(() => {
                 v-model="form.audio_url"
                 :merchant-id="merchantId"
                 :modes="['upload', 'url']"
-                hint="上传要翻唱的歌曲；填链接时需能被腾讯服务直接下载"
+                :hint="coverMode === 'mureka' ? '上传歌曲或填写可访问的音频链接；高级模式会截取约 30 秒作为参考' : '上传要翻唱的歌曲；填链接时需能被服务直接下载'"
               />
             </el-form-item>
 
-            <el-form-item label="人声分离">
+            <el-form-item v-if="coverMode === 'suno'" label="人声分离">
               <el-switch v-model="form.separate" />
               <span class="text-muted" style="margin-left: 8px; font-size: 12px">
                 原曲带伴奏时请开启，先分离出人声再换音色
               </span>
             </el-form-item>
 
-            <el-form-item label="备注名">
+            <el-form-item v-if="coverMode === 'suno'" label="备注名">
               <el-input v-model="form.title" maxlength="100" placeholder="选填，便于在任务列表里辨认" />
             </el-form-item>
 
+            <template v-if="coverMode === 'mureka'">
+              <el-form-item label="歌名" required>
+                <el-input v-model="advancedForm.title" maxlength="100" placeholder="填写新作品名称" />
+              </el-form-item>
+              <el-form-item label="歌词" required>
+                <el-input v-model="advancedForm.lyrics" type="textarea" :rows="10" placeholder="按原分行粘贴歌词，可保留 [Verse]、[Chorus] 等段落标记" />
+              </el-form-item>
+            </template>
+
             <el-form-item style="margin-top: 16px">
-              <el-button type="primary" :loading="submitting" :disabled="!balanceEnough" @click="submitCover">
-                开始翻唱（{{ prices.cover }} 积分）
+              <el-button type="primary" :loading="submitting" @click="submitCover">
+                {{ coverMode === 'mureka' ? '开始参考重唱' : '开始翻唱' }}
               </el-button>
             </el-form-item>
           </el-form>
@@ -437,16 +505,16 @@ onBeforeUnmount(() => {
               style="width: 100%; margin-top: 8px"
             ></audio>
             <div v-if="item.status === 'failed'" class="error">
-              {{ item.task?.error_message || '翻唱失败' }}，积分不退还
+              {{ item.task?.error_message || '翻唱失败' }}
               <el-button link type="primary" size="small" :loading="item.retrying" @click="retryItem(item)">
-                免费重试
+                重试
               </el-button>
             </div>
           </div>
         </el-card>
 
         <el-card shadow="never" body-style="padding:16px" style="margin-top: 12px">
-          <template #header><span>最近翻唱</span></template>
+          <template #header><span>{{ coverMode === 'mureka' ? '最近高级模式作品' : '最近翻唱' }}</span></template>
           <el-table v-loading="historyLoading" :data="history" size="small" style="width: 100%">
             <el-table-column prop="id" label="ID" width="70" />
             <el-table-column label="状态" width="86" align="center">
@@ -473,12 +541,12 @@ onBeforeUnmount(() => {
     </el-row>
 
     <!-- 音色库 -->
-    <el-card shadow="never" body-style="padding:16px">
+    <el-card v-if="coverMode === 'suno'" shadow="never" body-style="padding:16px">
       <template #header>
         <div class="card-head">
           <span>音色库<span class="text-muted" style="font-size: 12px; margin-left: 8px">当前商户专属音色</span></span>
           <el-button type="primary" size="small" :icon="'Plus'" :disabled="!merchantId" @click="openTrain">
-            训练新音色（{{ prices.train }} 积分）
+            训练新音色
           </el-button>
         </div>
       </template>
@@ -549,6 +617,22 @@ onBeforeUnmount(() => {
       </el-table>
     </el-card>
 
+    <el-dialog v-model="advancedVocalDialog.visible" title="创建高级演唱音色" width="560px" destroy-on-close>
+      <el-form label-width="88px">
+        <el-form-item label="名称" required>
+          <el-input v-model="advancedVocalDialog.name" maxlength="30" placeholder="如：我的演唱音色" />
+        </el-form-item>
+        <el-form-item label="清唱样本" required>
+          <AudioInput v-model="advancedVocalDialog.audio_url" :merchant-id="merchantId"
+            hint="上传或录制 15～30 秒无伴奏清唱；建议单人、少混响" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="advancedVocalDialog.visible = false">取消</el-button>
+        <el-button type="primary" :loading="advancedVocalDialog.creating" @click="createAdvancedVocal">创建音色</el-button>
+      </template>
+    </el-dialog>
+
     <el-dialog v-model="trainVisible" title="训练新音色" width="560px" destroy-on-close>
       <el-form label-width="88px">
         <el-form-item label="音色名称" required>
@@ -569,7 +653,7 @@ onBeforeUnmount(() => {
       <template #footer>
         <el-button @click="trainVisible = false">取消</el-button>
         <el-button type="primary" :loading="training" @click="submitTrain">
-          开始训练（{{ prices.train }} 积分）
+          开始训练
         </el-button>
       </template>
     </el-dialog>

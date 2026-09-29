@@ -157,7 +157,7 @@ const previewBody = computed(() => toPrettyJson(payload.value))
         <div>
           <span class="text-gray-500">本站价格：</span>
           <span class="text-suno-yellow font-semibold font-mono">
-            {{ api.pricing.our === 0 ? '免费' : `${api.pricing.our} ${api.pricing.unit}` }}
+            {{ api.pricing.our === 0 ? '0 积分' : `${api.pricing.our} ${api.pricing.unit}` }}
           </span>
         </div>
         <div v-if="api.pricing.official > 0">

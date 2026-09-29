@@ -271,7 +271,7 @@ func (s *Service) Start(ctx context.Context, id int64) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	price := p.PointsCost
+	price := int64(0) // 旧草稿也按当前免费政策执行。
 	balance, err := s.store.StartMVProject(ctx, id, p.MerchantID, price, "生成长 MV："+p.Title)
 	if err != nil {
 		if errors.Is(err, storage.ErrInsufficientPoints) {
@@ -364,7 +364,7 @@ func (s *Service) Delete(ctx context.Context, id int64) error {
 
 // fill 补充展示字段：报价、参考图预览，以及按需签名的成片地址（播放地址始终有效）。
 func (s *Service) fill(p *model.MVProject) {
-	p.Quote = p.PointsCost
+	p.Quote = 0 // 展示当前免费价格，历史积分仍保存在 PointsCost。
 	p.Look.RefURLs = s.RefURLs(p.Look)
 	if p.VideoKey == "" || !s.Ready() {
 		return

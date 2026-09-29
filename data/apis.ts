@@ -28,11 +28,11 @@ export const apiList: ApiDefinition[] = [
     name: '查询积分余额',
     provider: '系统通用',
     category: 'system',
-    description: '查询当前商户的积分余额。该接口不消耗积分，可随时调用。',
+    description: '查询当前商户的历史积分余额。所有服务无需商户积分。',
     endpoint: '/api/v1/points/balance',
     method: 'GET',
     params: [],
-    pricing: { official: 0, our: 0, unit: '免费' },
+    pricing: { official: 0, our: 0, unit: '积分' },
     responseExample: { code: 200, message: '查询成功', data: { remaining_points: 1000 } },
     guide: `
       <p><strong>响应说明：</strong></p>
@@ -45,7 +45,7 @@ export const apiList: ApiDefinition[] = [
         </tbody>
       </table>
     `,
-    notes: ['调用本接口不消耗积分', '建议在提交生成任务前先确认余额充足，避免 402 错误']
+    notes: ['所有服务无需商户积分，余额不限制调用']
   },
   {
     id: 'points-logs',
@@ -59,7 +59,7 @@ export const apiList: ApiDefinition[] = [
       { name: 'page', type: 'number', required: false, description: '页码', default: 1 },
       { name: 'limit', type: 'number', required: false, description: '每页数量', default: 20 }
     ],
-    pricing: { official: 0, our: 0, unit: '免费' },
+    pricing: { official: 0, our: 0, unit: '积分' },
     responseExample: {
       code: 200,
       message: 'success',
@@ -186,7 +186,7 @@ export const apiList: ApiDefinition[] = [
     notes: [
       '一次生成两首歌，因此返回两个 task_id，需要分别查询',
       'task_id 是数字任务编号，custom_id 是 Suno 音乐 UUID，后续加工一律使用 custom_id',
-      '任务失败不退积分，可调用「重试失败任务」接口免费重新生成，任务 ID 不变'
+      '任务失败可调用「重试失败任务」接口重新生成，任务 ID 不变'
     ]
   },
   {
@@ -233,11 +233,11 @@ export const apiList: ApiDefinition[] = [
     name: '查询音乐任务',
     provider: 'SUNO',
     category: 'music',
-    description: '查询单个音乐任务的状态与结果。免费调用。',
+    description: '查询单个音乐任务的状态与结果。可直接调用。',
     endpoint: '/api/v1/music/task',
     method: 'GET',
     params: [{ name: 'id', type: 'number', required: true, description: '任务 ID（数字），由生成类接口返回' }],
-    pricing: { official: 0, our: 0, unit: '免费' },
+    pricing: { official: 0, our: 0, unit: '积分' },
     responseExample: {
       code: 200,
       data: {
@@ -262,11 +262,11 @@ export const apiList: ApiDefinition[] = [
           <tr><td><code>pending</code></td><td>排队中</td></tr>
           <tr><td><code>processing</code></td><td>生成中</td></tr>
           <tr><td><code>completed</code></td><td>已完成，可读取结果</td></tr>
-          <tr><td><code>failed</code></td><td>失败，不退积分，可调用重试接口免费重新生成</td></tr>
+          <tr><td><code>failed</code></td><td>失败，可调用重试接口重新生成</td></tr>
         </tbody>
       </table>
       ${AUDIO_RESULT_TABLE}
-      <p><code>retry_count</code> 为已免费重试的次数；失败任务默认不退积分，<code>points_refunded</code> 仅在客服人工退款后为 <code>true</code>。</p>
+      <p><code>retry_count</code> 为已重试的次数；当前服务无需商户积分；<code>points_refunded</code> 仅记录历史退款。</p>
     `,
     notes: ['轮询间隔建议 3~5 秒，过于频繁会触发 429 限流', '音频与视频链接有效期为 1 小时，请及时转存']
   },
@@ -283,32 +283,32 @@ export const apiList: ApiDefinition[] = [
       { name: 'page', type: 'number', required: false, description: '页码', default: 1 },
       { name: 'size', type: 'number', required: false, description: '每页数量', default: 10 }
     ],
-    pricing: { official: 0, our: 0, unit: '免费' },
+    pricing: { official: 0, our: 0, unit: '积分' },
     responseExample: {
       code: 200,
       message: '请求成功',
       data: { total: 2, list: [{ id: 199824, status: 3, custom_id: '0f65a62b-3c55-4af6-8353-56be806b93d2' }] }
     },
-    guide: `<p>返回结构与单个查询一致，逐条包含在列表中。免费调用，是同时轮询多首歌时的推荐方式。</p>`
+    guide: `<p>返回结构与单个查询一致，逐条包含在列表中。可直接调用，是同时轮询多首歌时的推荐方式。</p>`
   },
   {
     id: 'music-retry',
     name: '重试失败任务',
     provider: 'SUNO',
     category: 'music',
-    description: '任务失败不退积分，可用原参数免费重新生成。任务 ID 不变，重试后继续用查询接口轮询。',
+    description: '任务失败可用原参数重新生成。任务 ID 不变，重试后继续用查询接口轮询。',
     endpoint: '/api/v1/music/retry',
     method: 'POST',
     params: [{ name: 'id', type: 'number', required: true, description: '失败任务的 ID（数字）' }],
-    pricing: { official: 0, our: 0, unit: '免费' },
+    pricing: { official: 0, our: 0, unit: '积分' },
     responseExample: {
       code: 200,
       message: '请求成功',
       data: { id: 199824, status: 'pending', status_code: 1, retry_count: 1, points_refunded: false }
     },
-    guide: `<p>只有 <code>status</code> 为 <code>failed</code> 的任务可以重试。重试不扣积分，每个任务最多免费重试 3 次，
+    guide: `<p>只有 <code>status</code> 为 <code>failed</code> 的任务可以重试。重试不扣积分，每个任务最多重试 3 次，
       返回中的 <code>retry_count</code> 为已重试次数。重试后任务回到 <code>pending</code>，按原方式轮询即可。</p>`,
-    notes: ['只有上游当场拒收、任务未建立时才会立即退还积分，这种情况不会产生任务 ID', '超过重试次数请联系客服']
+    notes: ['所有服务无需商户积分', '超过重试次数请联系客服']
   },
   {
     id: 'v2-music-download-wav',
@@ -391,8 +391,8 @@ export const apiList: ApiDefinition[] = [
         audio_sha256: '9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08',
         song_created_at: '2026-09-22T11:52:50+08:00',
         issued_at: '2026-09-25T16:30:00+08:00',
-        points_cost: 100,
-        charged: true,
+        points_cost: 0,
+        charged: false,
         remaining_points: 900,
         download_path: '/api/v1/music/certificate/download?certificate_no=SC20260925-7K3QM9XA',
         verify_url: 'https://open.suno.cn/verify?no=SC20260925-7K3QM9XA'
@@ -400,8 +400,8 @@ export const apiList: ApiDefinition[] = [
     },
     guide: `<p>同步接口，直接返回证书信息，无需轮询。证书包含作品名称、署名作者、作品 ID、创作完成时间、时长、风格、模型、歌词，
       以及作品 MP3 文件的 <code>SHA-256</code> 指纹（与平台下载的 MP3 为同一文件），并附在线核验二维码。</p>
-      <p><strong>计费：</strong>每首作品只签发一份，首次签发扣 100 积分；之后重复调用返回同一份证书，
-      <code>charged</code> 为 <code>false</code>，不再扣费。音频已失效等原因签发失败时不扣费。</p>
+      <p><strong>费用：</strong>创作证明无需商户积分；每首作品只签发一份，之后重复调用返回同一份证书，
+      <code>charged</code> 为 <code>false</code>。音频已失效等原因可能导致签发失败。</p>
       <p>拿到 <code>certificate_no</code> 后，调用「下载创作证明」获取 PDF 文件。</p>`,
     notes: [
       '作品需已生成完成；音频链接失效后无法再签发',
@@ -477,7 +477,7 @@ export const apiList: ApiDefinition[] = [
         name: 'copyrightAudio',
         type: 'boolean',
         required: false,
-        description: '是否使用受版权保护的音频，传 true 额外扣除 15 积分',
+        description: '是否使用受版权保护的音频，传 true 不额外收费',
         default: false
       }
     ],

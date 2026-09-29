@@ -63,7 +63,7 @@ func (s *Service) CheckFont() error {
 }
 
 // Price 每份证明的价格（积分）。
-func (s *Service) Price() int64 { return s.opts.Price }
+func (s *Service) Price() int64 { return 0 }
 
 // Result 一次签发的结果。
 type Result struct {
@@ -111,7 +111,7 @@ func (s *Service) Issue(ctx context.Context, merchantID, taskID int64, author st
 		TaskID:     t.ID,
 		SunoID:     *t.CustomID,
 		Author:     author,
-		PointsCost: s.opts.Price,
+		PointsCost: 0,
 		IssuedAt:   time.Now().Truncate(time.Second),
 	}
 	fillSongInfo(c, t, request)

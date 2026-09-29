@@ -77,6 +77,11 @@ export const deleteKey = (payload) => http.post('/keys/delete', payload)
 /* ---------------------------------- 音乐创作 ---------------------------------- */
 
 export const generateMusic = (payload) => http.post('/music/generate', payload)
+export const uploadMurekaFile = (payload) => http.post('/mureka/upload', payload, { timeout: 2 * 60 * 1000 })
+export const generateMurekaLyrics = (payload) => http.post('/mureka/lyrics', payload, { timeout: 60 * 1000 })
+export const callAdvancedTool = (payload) => http.post('/mureka/tool', payload, { timeout: 2 * 60 * 1000 })
+export const uploadMurekaBinary = (formData) => http.post('/mureka/upload-file', formData, { timeout: 2 * 60 * 1000 })
+export const uploadMurekaPart = (formData) => http.post('/mureka/upload-part', formData, { timeout: 2 * 60 * 1000 })
 export const generateVideo = (payload) => http.post('/music/video', payload)
 export const uploadMusic = (payload) => http.post('/music/upload', payload)
 export const fetchSongs = (params) => http.get('/songs', { params })
@@ -127,9 +132,13 @@ export const trainVoice = (payload) => http.post('/voices/train', payload)
 export const deleteVoice = (id) => http.post('/voices/delete', { id })
 // 翻唱作品库里的歌要先转 MP3，首次可能要几十秒
 export const coverWithVoice = (payload) => http.post('/voices/cover', payload, { timeout: 3 * 60 * 1000 })
+export const coverWithVocal = (payload) => http.post('/voices/cover-advanced', payload, { timeout: 3 * 60 * 1000 })
 // 音频较大，放宽超时并透出上传进度
-export const uploadSample = (form, onUploadProgress) =>
-  http.post('/voices/sample', form, { timeout: 5 * 60 * 1000, onUploadProgress })
+export const uploadSample = async (form, onUploadProgress) => {
+  // 先检查登录状态，避免大文件请求被提前拒绝时代理将 401 转成空的 500。
+  await fetchProfile()
+  return http.post('/voices/sample', form, { timeout: 5 * 60 * 1000, onUploadProgress })
+}
 export const fetchCapabilities = (group) => http.get('/capabilities', { params: { group } })
 // 长 MV：写分镜可能要一两分钟，放宽超时
 export const fetchMvProjects = (params) => http.get('/mv/projects', { params })
@@ -151,7 +160,7 @@ export const studioGenerate = (payload) => http.post('/studio/generate', payload
 export const fetchTasks = (params) => http.get('/tasks', { params })
 export const fetchTaskDetail = (id) => http.get('/tasks/detail', { params: { id } })
 export const refundTask = (payload) => http.post('/tasks/refund', payload)
-// 失败任务不退积分，可免费重试
+// 失败任务可重试
 export const retryTask = (id) => http.post('/tasks/retry', { id }, { timeout: 3 * 60 * 1000 })
 
 /* ---------------------------------- 积分 ---------------------------------- */

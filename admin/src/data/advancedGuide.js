@@ -1,0 +1,30 @@
+export const guideTools = [
+  { key: 'lyrics_generate', label: '生成歌词', fields: '必填 prompt：歌曲主题或创作要求。', example: { prompt: '写一首关于夏夜重逢的流行歌曲' }, path: 'post-v1-lyrics-generate' },
+  { key: 'lyrics_extend', label: '扩展歌词', fields: '必填 lyrics：需要续写的歌词。', example: { lyrics: '[Verse]\n在夜色里等你' }, path: 'post-v1-lyrics-extend' },
+  { key: 'song_generate', label: '歌词生成歌曲', fields: '必填 lyrics；model 可填 auto。选用自己的演唱音色时填 vocal_id；prompt 描述风格。', example: { model: 'auto', lyrics: '[Verse]\n在夜色里等你', prompt: 'warm pop', vocal_id: '替换为音色ID' }, path: 'post-v1-song-generate' },
+  { key: 'song_easy', label: '描述生成歌曲', fields: '用 prompt 描述歌曲；可选 model、vocal_id、n。', example: { model: 'auto', prompt: '温柔的中文流行歌，钢琴伴奏' }, path: 'post-v1-song-easy-generate' },
+  { key: 'instrumental_generate', label: '生成纯音乐', fields: '用 prompt 描述没有演唱的音乐；可选 model、n。', example: { model: 'auto', prompt: '舒缓的钢琴和弦乐' }, path: 'post-v1-instrumental-generate' },
+  { key: 'soundtrack', label: '图片或视频配乐', fields: 'image_id 与 video_id 二选一，来自“上传参考素材”的配乐用途；可选 prompt。', example: { image_id: '替换为图片文件ID', prompt: 'cinematic, emotional', model: 'auto' }, path: 'post-v1-soundtrack-generate' },
+  { key: 'song_extend', label: '续写歌曲', fields: 'song_id 与 upload_audio_id 二选一；必填 lyrics、extend_at。extend_at 单位为毫秒。', example: { song_id: '替换为歌曲ID', lyrics: '[Verse]\n新的一段歌词', extend_at: 30000, extend_type: 'tail' }, path: 'post-v1-song-extend' },
+  { key: 'song_remix', label: '歌曲混音', fields: 'song_id 与 upload_audio_id 二选一；必填 lyrics、prompt。', example: { song_id: '替换为歌曲ID', lyrics: '[Verse]\n新的歌词', prompt: 'jazz' }, path: 'post-v1-song-remix' },
+  { key: 'song_recognize', label: '识别歌曲歌词', fields: '必填 upload_audio_id，来自用途为 audio 的素材上传。', example: { upload_audio_id: '替换为音频文件ID' }, path: 'post-v1-song-recognize' },
+  { key: 'song_describe', label: '理解歌曲', fields: '必填 url：可访问的音频 URL。', example: { url: 'https://example.com/song.mp3' }, path: 'post-v1-song-describe' },
+  { key: 'song_transcribe', label: '音乐转谱', fields: 'song_id、upload_audio_id、url 任选其一；同步返回文件结果。', example: { song_id: '替换为歌曲ID' }, path: 'post-v1-song-transcribe' },
+  { key: 'song_stem', label: '歌曲分轨', fields: '必填 url：可访问的音频 URL；同步返回分轨文件。', example: { url: 'https://example.com/song.mp3' }, path: 'post-v1-song-stem' },
+  { key: 'track_generate', label: '单轨生成', fields: '必填 prompt；generate_type 可选 Vocals、Guitar、Drums 等；基于已有歌曲时填 song_id 或 upload_audio_id。', example: { generate_type: 'Guitar', prompt: 'acoustic, melancholic' }, path: 'post-v1-track-generate' },
+  { key: 'region_edit', label: '局部编辑', fields: 'song_id 与 upload_audio_id 二选一；必填 lyrics、edit_start、edit_end。时间单位为毫秒。', example: { song_id: '替换为歌曲ID', lyrics: '[Verse]\n替换后的歌词', edit_start: 30000, edit_end: 40000 }, path: 'post-v1-song-region-edit' },
+  { key: 'video_generate', label: '生成音乐视频', fields: '填 song_id、prompt；可选 duration、ratio、resolution。提交后用视频任务 ID 查询结果。', example: { song_id: '替换为歌曲ID', prompt: '夜晚的城市街道，电影感镜头', duration: 5, ratio: '16:9', resolution: '720p' }, path: 'post-v1-video-generate' },
+  { key: 'lyrics_video', label: '生成歌词视频', fields: '填 song_id 或 upload_audio_id；可选 aspect_ratio。同步返回视频结果。', example: { song_id: '替换为歌曲ID', aspect_ratio: '9:16' }, path: 'post-v1-lyrics-video-generate' },
+  { key: 'tts_generate', label: '语音合成', fields: '必填 text，并填 voice 或 voice_id。单次 text 最长 500 字符。', example: { text: '你好，欢迎收听', voice: 'Luna' }, path: 'post-v1-tts-generate' },
+  { key: 'tts_podcast', label: '双人播客', fields: '必填 conversations 数组；每一项填写 text 和 voice。', example: { conversations: [{ text: '欢迎来到今天的节目。', voice: 'Luna' }, { text: '今天我们聊聊音乐。', voice: 'Ethan' }] }, path: 'post-v1-tts-podcast' },
+  { key: 'uploads_create', label: '创建大文件上传', fields: '必填 upload_name 和 purpose；训练素材的 purpose 填 fine-tuning。返回 upload_id。', example: { upload_name: 'voice-samples.mp3', purpose: 'fine-tuning' }, path: 'post-v1-uploads-create' },
+  { key: 'uploads_complete', label: '完成大文件上传', fields: '先创建上传并在下方“追加文件块”；必填 upload_id。', example: { upload_id: '替换为上传ID' }, path: 'post-v1-uploads-complete' },
+  { key: 'finetuning_create', label: '创建专属模型训练', fields: '必填 upload_id、suffix；suffix 使用小写字母、数字和连字符。', example: { upload_id: '替换为上传ID', suffix: 'my-model' }, path: 'post-v1-finetuning-create' },
+  { key: 'finetuning_query', label: '查询专属模型训练', fields: '在“上游任务 ID”填写训练接口返回的 id；无需填写 JSON。', path: 'get-v1-finetuning-query-%7Btask_id%7D' },
+  { key: 'song_query', label: '查询歌曲任务', fields: '在“上游任务 ID”填写歌曲生成接口返回的 id；完成后从 choices 中取得歌曲 ID。', path: 'get-v1-song-query-%7Btask_id%7D' },
+  { key: 'instrumental_query', label: '查询纯音乐任务', fields: '在“上游任务 ID”填写纯音乐生成接口返回的 id；无需填写 JSON。', path: 'get-v1-instrumental-query-%7Btask_id%7D' },
+  { key: 'video_query', label: '查询视频任务', fields: '在“上游任务 ID”填写视频生成接口返回的 id；无需填写 JSON。', path: 'get-v1-video-query-%7Btask_id%7D' },
+  { key: 'account_billing', label: '查询上游账单', fields: '直接点击执行；无需填写任务 ID 或 JSON。', path: 'get-v1-account-billing' }
+]
+
+export const guideToolByKey = Object.fromEntries(guideTools.map((tool) => [tool.key, tool]))

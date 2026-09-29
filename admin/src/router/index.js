@@ -71,7 +71,13 @@ const routes = [
         path: 'points',
         name: 'points',
         component: () => import('@/views/PointLogs.vue'),
-        meta: { title: '积分流水', icon: 'Wallet' }
+        meta: { title: '历史积分', icon: 'Wallet' }
+      },
+      {
+        path: 'guide',
+        name: 'guide',
+        component: () => import('@/views/AdvancedGuide.vue'),
+        meta: { title: '高级功能教程', icon: 'Reading' }
       },
       {
         path: 'settings',

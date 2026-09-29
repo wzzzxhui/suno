@@ -316,17 +316,19 @@ func (s *Store) StartMVProject(ctx context.Context, projectID, merchantID, cost 
 		`SELECT points FROM merchants WHERE id = ? FOR UPDATE`, merchantID).Scan(&balance); err != nil {
 		return 0, err
 	}
-	if balance < cost {
-		return balance, ErrInsufficientPoints
-	}
-	balance -= cost
-	if _, err := tx.ExecContext(ctx, `UPDATE merchants SET points = ? WHERE id = ?`, balance, merchantID); err != nil {
-		return 0, err
-	}
-	if _, err := tx.ExecContext(ctx,
-		`INSERT INTO point_logs (merchant_id, type, points, balance, remark) VALUES (?, ?, ?, ?, ?)`,
-		merchantID, model.PointConsume, -cost, balance, remark); err != nil {
-		return 0, err
+	if cost > 0 {
+		if balance < cost {
+			return balance, ErrInsufficientPoints
+		}
+		balance -= cost
+		if _, err := tx.ExecContext(ctx, `UPDATE merchants SET points = ? WHERE id = ?`, balance, merchantID); err != nil {
+			return 0, err
+		}
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO point_logs (merchant_id, type, points, balance, remark) VALUES (?, ?, ?, ?, ?)`,
+			merchantID, model.PointConsume, -cost, balance, remark); err != nil {
+			return 0, err
+		}
 	}
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE mv_projects SET status = ?, points_cost = ?, started_at = NOW(), error_message = '' WHERE id = ?`,

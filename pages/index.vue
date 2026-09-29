@@ -36,7 +36,7 @@ const totalCount = apiList.length
             class="inline-flex items-center px-3 py-1 bg-emerald-900/30 text-emerald-400 rounded-full
                    text-sm font-medium border border-emerald-700"
           >
-            🎁 新用户注册即送 60 积分
+            由平台账号统一提供服务
           </span>
           <NuxtLink
             to="/api-guide"

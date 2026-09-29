@@ -33,7 +33,7 @@ async function submit() {
         <span class="dot" />
         <div>
           <h1>安沐心平台</h1>
-          <p>商户、密钥、任务与积分的统一管理入口</p>
+          <p>商户、密钥与任务的统一管理入口</p>
         </div>
       </div>
 

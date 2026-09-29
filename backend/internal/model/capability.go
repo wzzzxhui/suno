@@ -282,6 +282,9 @@ func Capabilities(group string) []Capability {
 	if group == "" || group == GroupVideo {
 		out = append(out, videoCapabilities...)
 	}
+	for i := range out {
+		out[i].Price = PriceOf(out[i].Kind)
+	}
 	return out
 }
 

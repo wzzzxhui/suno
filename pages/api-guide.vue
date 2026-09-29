@@ -9,7 +9,7 @@ const toc = [
   { id: 'query', label: '查询任务' },
   { id: 'upload', label: '上传参考音频' },
   { id: 'post', label: '后期处理' },
-  { id: 'points', label: '积分相关' },
+  { id: 'points', label: '历史积分记录' },
   { id: 'errors', label: '错误码' },
   { id: 'faq', label: '常见问题' },
   { id: 'example', label: '完整代码示例' }
@@ -128,8 +128,8 @@ async function waitTask(id) {
     const done = task.status === 'completed' || task.status === 3
     const failed = task.status === 'failed' || task.status === 4
     if (done) return task
-    // 失败不退积分，可调 /api/v1/music/retry 免费重试（任务 ID 不变）
-    if (failed) throw new Error('任务失败，可免费重试')
+    // 生成失败可调 /api/v1/music/retry 重试（任务 ID 不变）
+    if (failed) throw new Error('任务失败，可重试')
   }
   throw new Error('轮询超时')
 }
@@ -154,7 +154,7 @@ const errors = [
   { code: 200, meaning: '成功', action: '正常读取 data' },
   { code: 400, meaning: '参数错误', action: '检查必填项与取值范围' },
   { code: 401, meaning: '鉴权失败', action: '确认 Authorization 头与 access_key' },
-  { code: 402, meaning: '积分不足', action: '先充值，或调用余额接口确认' },
+
   { code: 429, meaning: '触发限流', action: '降低请求频率，轮询间隔拉到 5 秒以上' },
   { code: 500, meaning: '服务端异常', action: '稍后重试；持续出现请联系客服' }
 ]
@@ -173,8 +173,8 @@ const faqs = [
     a: 'extend 是 JSON 字符串，需要先 JSON.parse。解析后是歌曲完整信息，用其中的 id 与外层 custom_id 对应，即可定位到当前这首歌的标题、歌词、风格等数据。'
   },
   {
-    q: '任务失败积分会退吗？',
-    a: '生成失败不退积分，但可以免费重试：调用 POST /api/v1/music/retry 传入任务 id，会用原参数重新生成，任务 id 不变，不再扣费。每个任务最多免费重试 3 次，查询结果里的 retry_count 为已重试次数。只有上游当场拒收、任务未建立时才会立即退还。'
+    q: '任务失败怎么办？',
+    a: '所有服务无需商户积分。生成失败后可调用 POST /api/v1/music/retry 传入任务 id，任务 id 不变。每个任务最多重试 3 次。'
   },
   {
     q: '下载链接失效了怎么办？',
@@ -344,8 +344,8 @@ Content-Type: application/json"
                   <tr><td class="border border-suno-gray-600 px-2.5 py-1.5 font-mono text-suno-yellow">result.fileInfo.coverUrl</td><td class="border border-suno-gray-600 px-2.5 py-1.5">封面图地址</td></tr>
                   <tr><td class="border border-suno-gray-600 px-2.5 py-1.5 font-mono text-suno-yellow">result.fileInfo.duration</td><td class="border border-suno-gray-600 px-2.5 py-1.5">时长（秒）</td></tr>
                   <tr><td class="border border-suno-gray-600 px-2.5 py-1.5 font-mono text-suno-yellow">result.extend</td><td class="border border-suno-gray-600 px-2.5 py-1.5">JSON 字符串，需 JSON.parse 后使用</td></tr>
-                  <tr><td class="border border-suno-gray-600 px-2.5 py-1.5 font-mono text-suno-yellow">points_refunded</td><td class="border border-suno-gray-600 px-2.5 py-1.5">是否已退积分（失败任务默认不退，可免费重试）</td></tr>
-                  <tr><td class="border border-suno-gray-600 px-2.5 py-1.5 font-mono text-suno-yellow">retry_count</td><td class="border border-suno-gray-600 px-2.5 py-1.5">已免费重试的次数</td></tr>
+                  <tr><td class="border border-suno-gray-600 px-2.5 py-1.5 font-mono text-suno-yellow">points_refunded</td><td class="border border-suno-gray-600 px-2.5 py-1.5">历史退款状态（当前服务无需商户积分）</td></tr>
+                  <tr><td class="border border-suno-gray-600 px-2.5 py-1.5 font-mono text-suno-yellow">retry_count</td><td class="border border-suno-gray-600 px-2.5 py-1.5">已重试的次数</td></tr>
                 </tbody>
               </table>
             </div>
@@ -362,7 +362,7 @@ Content-Type: application/json"
           <p class="text-sm text-gray-400 leading-6">
             提交后拿 task_id 轮询，完成后从 <code class="font-mono text-suno-yellow">result.custom_id</code>
             取得音乐 ID，就能用在延长或翻唱模式里。音频 URL 必须可公开访问；
-            <code class="font-mono text-suno-yellow">copyrightAudio</code> 传 true 会额外扣除 15 积分。
+            <code class="font-mono text-suno-yellow">copyrightAudio</code> 传 true 不额外收费。
           </p>
         </div>
       </section>
@@ -385,10 +385,10 @@ Content-Type: application/json"
 
       <!-- 积分 -->
       <section id="points" class="mb-12 scroll-mt-24">
-        <h2 class="heading-md mb-4">积分相关</h2>
+        <h2 class="heading-md mb-4">历史积分记录</h2>
         <div class="card">
           <CodeBlock :code="pointsSnippet" />
-          <p class="text-xs text-gray-500 mt-3">查询余额与流水均不消耗积分。任务失败不退积分，可调用重试接口免费重新生成。</p>
+          <p class="text-xs text-gray-500 mt-3">服务调用无需商户积分，余额与流水仅保留历史记录；任务失败可调用重试接口。</p>
         </div>
       </section>
 

@@ -68,7 +68,7 @@ onMounted(load)
               <el-descriptions-item label="任务超时">
                 {{ system.task_timeout }}
                 <span class="text-muted" style="margin-left: 8px">
-                  超时判失败，不退积分，可免费重试 {{ system.task_max_retries }} 次
+                  超时判失败，可重试 {{ system.task_max_retries }} 次
                 </span>
               </el-descriptions-item>
             </el-descriptions>
@@ -77,18 +77,13 @@ onMounted(load)
 
         <el-col :xs="24" :lg="12" style="margin-bottom: 12px">
           <el-card shadow="never" body-style="padding:16px">
-            <template #header><span>限额与赠送</span></template>
+            <template #header><span>服务规则</span></template>
             <el-descriptions :column="1" border size="small">
               <el-descriptions-item label="单商户限流">
                 {{ system.rate_limit_per_minute }} 次/分钟
                 <span class="text-muted" style="margin-left: 8px">超出返回 429</span>
               </el-descriptions-item>
-              <el-descriptions-item label="新商户赠送">{{ system.signup_bonus }} 积分</el-descriptions-item>
-              <el-descriptions-item label="版权音频附加费">
-                {{ system.copyright_surcharge }} 积分
-                <span class="text-muted" style="margin-left: 8px">上传时传 copyrightAudio=true</span>
-              </el-descriptions-item>
-              <el-descriptions-item label="积分换算">1 积分 = 0.01 元</el-descriptions-item>
+              <el-descriptions-item label="商户费用">上游成本由平台账号承担</el-descriptions-item>
             </el-descriptions>
           </el-card>
         </el-col>
@@ -125,7 +120,7 @@ onMounted(load)
       </el-card>
 
       <el-card shadow="never" body-style="padding:16px">
-        <template #header><span>接口定价</span></template>
+        <template #header><span>接口信息</span></template>
         <el-table :data="system.prices" stripe border size="small" style="width: 100%">
           <el-table-column prop="label" label="接口" min-width="160" />
           <el-table-column label="标识" min-width="150">
@@ -144,9 +139,9 @@ onMounted(load)
         </el-table>
 
         <el-alert type="info" :closable="false" show-icon style="margin-top: 12px">
-          生成音乐与 Remaster 一次产出两条任务，费用平摊到两条记录。生成失败不退积分，可免费重试；
+          生成音乐与 Remaster 一次产出两条任务。生成失败可重试；
           仅当上游当场拒收、任务未建立时立即退还。
-          查询类接口（任务查询、批量查询、余额、流水）不消耗积分。
+          上游调用成本由平台账号承担。
         </el-alert>
       </el-card>
     </template>

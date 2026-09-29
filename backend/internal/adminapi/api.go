@@ -88,6 +88,7 @@ func (s *Server) Register(r *httpx.Router) {
 	r.POST("/admin/api/voices/train", s.trainVoice, auth)
 	r.POST("/admin/api/voices/delete", s.deleteVoice, auth)
 	r.POST("/admin/api/voices/cover", s.coverWithVoice, auth)
+	r.POST("/admin/api/voices/cover-advanced", s.coverWithVocal, auth)
 	r.POST("/admin/api/voices/sample", s.uploadSample, auth)
 
 	r.GET("/admin/api/mv/projects", s.mvProjects, auth)
@@ -520,10 +521,20 @@ func (s *Server) deleteKey(w http.ResponseWriter, r *http.Request) error {
 /* ---------------------------------- 音乐创作 ---------------------------------- */
 
 type adminGenerateRequest struct {
+	ExcludeRap bool `json:"exclude_rap"`
 	musicreq.Generate
-	MerchantID int64 `json:"merchant_id"`
-	// VoiceID 演唱音色（创建演唱音色任务的编号）：选了就改由 Mureka 直接用这个声音演唱，不再用 Suno
-	VoiceID int64 `json:"voice_id"`
+	MerchantID int64  `json:"merchant_id"`
+	Provider   string `json:"provider"`
+	// VoiceID 是 Mureka 演唱音色任务的编号，仅高级模式使用。
+	VoiceID        int64  `json:"voice_id"`
+	MurekaModel    string `json:"mureka_model"`
+	SourceID       string `json:"source_id"`
+	UploadAudioID  string `json:"upload_audio_id"`
+	ReferenceID    string `json:"reference_id"`
+	MelodyID       string `json:"melody_id"`
+	InstrumentalID string `json:"instrumental_id"`
+	ExtendType     string `json:"extend_type"`
+	Gender         string `json:"gender"`
 }
 
 // generateMusic 由运营在后台代商户发起生成，积分从该商户账户扣除。
@@ -537,14 +548,27 @@ func (s *Server) generateMusic(w http.ResponseWriter, r *http.Request) error {
 	if err := httpx.DecodeJSON(r, &req); err != nil {
 		return err
 	}
+	if err := validateRapExclusion(&req); err != nil {
+		return err
+	}
 	merchant, err := s.activeMerchant(r, req.MerchantID)
 	if err != nil {
 		return err
 	}
-	if req.VoiceID > 0 {
-		return s.generateWithVoice(w, r, user, merchant, &req)
+	switch req.Provider {
+	case "mureka":
+		return s.generateMureka(w, r, user, merchant, &req)
+	case "suno":
+		if req.VoiceID > 0 {
+			return httpx.BadRequest("普通模式不能指定演唱音色")
+		}
+	default:
+		return httpx.BadRequest("请选择普通模式或高级模式")
 	}
 
+	if req.ExcludeRap {
+		req.NegativeTags = rapExclusionTags(req.NegativeTags)
+	}
 	payload, err := req.Payload()
 	if err != nil {
 		return err
@@ -630,7 +654,7 @@ func (s *Server) uploadMusic(w http.ResponseWriter, r *http.Request) error {
 	httpx.JSON(w, map[string]interface{}{
 		"task_id": ids[0],
 		"balance": balance,
-		"cost":    model.PriceOf(model.KindUpload) + surcharge,
+		"cost":    0,
 	})
 	return nil
 }
@@ -824,7 +848,7 @@ func (s *Server) studioGenerate(w http.ResponseWriter, r *http.Request) error {
 	httpx.JSON(w, map[string]interface{}{
 		"task_ids": ids,
 		"balance":  balance,
-		"cost":     cap.Price,
+		"cost":     model.PriceOf(cap.Kind),
 		"label":    cap.Label,
 	})
 	return nil

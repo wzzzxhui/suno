@@ -93,7 +93,7 @@ const checkBalance = async () => {
 
     <div class="card">
       <div class="flex items-center justify-between mb-3">
-        <h2 class="text-lg font-semibold text-white">积分余额</h2>
+        <h2 class="text-lg font-semibold text-white">历史积分余额</h2>
         <button class="text-xs text-gray-400 hover:text-suno-yellow" :disabled="loading" @click="checkBalance">
           {{ loading ? '查询中…' : '刷新' }}
         </button>
@@ -105,7 +105,7 @@ const checkBalance = async () => {
       <p v-else-if="balanceError" class="text-sm text-red-400">{{ balanceError }}</p>
       <p v-else class="text-sm text-gray-500">点击「刷新」查询当前余额</p>
 
-      <p class="text-[11px] text-gray-500 mt-2">查询余额不消耗积分。</p>
+      <p class="text-[11px] text-gray-500 mt-2">此余额仅用于查看历史记录，不限制调用。</p>
     </div>
 
     <div class="card">

@@ -6,13 +6,13 @@ const config = useRuntimeConfig()
 const features = [
   {
     icon: '💰',
-    title: '价格透明',
-    desc: '按次计费，文档里每个接口都标了单价与官方参考价，没有隐藏扣费。'
+    title: '统一服务',
+    desc: '调用由平台账号统一提供，无需商户积分。'
   },
   {
     icon: '🛡️',
     title: '稳定可靠',
-    desc: '7×24 监控，异常会在查询结果里如实返回；任务失败可免费重试。'
+    desc: '7×24 监控，异常会在查询结果里如实返回；任务失败可重试。'
   },
   {
     icon: '📚',
@@ -29,7 +29,7 @@ const steps = [
 
 const stats = [
   { label: '开放接口', value: '19' },
-  { label: '新用户赠送积分', value: '60' },
+  { label: '服务方式', value: '按需调用' },
   { label: '下载链接有效期', value: '1 小时' },
   { label: '建议轮询间隔', value: '3~5 秒' }
 ]

@@ -52,8 +52,8 @@ func TestPriceCoverage(t *testing.T) {
 		model.KindSpeed, model.KindDownloadWAV, model.KindDownloadMP3, model.KindDownloadM4A,
 	}
 	for _, kind := range kinds {
-		if model.PriceOf(kind) <= 0 {
-			t.Errorf("任务类型 %s 缺少定价", kind)
+		if model.PriceOf(kind) != 0 {
+			t.Errorf("任务类型 %s 应对商户免费", kind)
 		}
 		if remarkOf(kind) == string(kind) {
 			t.Errorf("任务类型 %s 缺少中文备注", kind)

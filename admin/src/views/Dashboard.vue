@@ -65,10 +65,10 @@ const cards = computed(() => {
     { label: '启用中的密钥', value: thousands(o.key_total), extra: '仅统计未禁用', color: '#4a3aa7' },
     { label: '今日任务', value: thousands(o.task_today), extra: `累计 ${thousands(o.task_total)}`, color: '#1baf7a' },
     { label: '进行中任务', value: thousands(o.task_running), extra: `失败 ${thousands(o.task_failed)}`, color: '#eb6834' },
-    { label: '今日消耗积分', value: thousands(o.consumed_today), extra: toAmount(o.consumed_today), color: '#2a78d6' },
-    { label: '累计消耗积分', value: thousands(o.consumed_total), extra: toAmount(o.consumed_total), color: '#4a3aa7' },
-    { label: '商户余额合计', value: thousands(o.points_remaining), extra: toAmount(o.points_remaining), color: '#1baf7a' },
-    { label: '累计退还积分', value: thousands(o.refunded_total), extra: `充值 ${thousands(o.recharged_total)}`, color: '#eb6834' }
+    { label: '历史今日消耗', value: thousands(o.consumed_today), extra: toAmount(o.consumed_today), color: '#2a78d6' },
+    { label: '历史累计消耗', value: thousands(o.consumed_total), extra: toAmount(o.consumed_total), color: '#4a3aa7' },
+    { label: '历史积分余额', value: thousands(o.points_remaining), extra: toAmount(o.points_remaining), color: '#1baf7a' },
+    { label: '历史累计退还', value: thousands(o.refunded_total), extra: `充值 ${thousands(o.recharged_total)}`, color: '#eb6834' }
   ]
 })
 
@@ -361,7 +361,7 @@ onBeforeUnmount(() => {
     </el-row>
 
     <el-card shadow="never" body-style="padding:16px">
-      <template #header><span>积分消耗趋势</span></template>
+      <template #header><span>历史积分消耗趋势</span></template>
       <div ref="pointsEl" style="height: 240px"></div>
     </el-card>
   </div>

@@ -57,5 +57,6 @@ func (p Pricing) Quote(segs []*model.MVSegment, resolution string, keyframes boo
 	if q.Price < p.MinPrice {
 		q.Price = p.MinPrice
 	}
+	q.Price = 0 // 商户免费；Cost 保留平台上游成本估算。
 	return q
 }
